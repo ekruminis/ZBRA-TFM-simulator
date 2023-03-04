@@ -1,9 +1,9 @@
 # TFM Simulation
 
 ## Example (using .jar)
-java -jar main.jar \*TFM_STYLE\* \*TIME_IN_MINUTES\* \*SEED\* \*NUMBER_OF_MINERS\* \*OUTPUT_FILENAME\* \*INPUT_FILENAME\*
+java -jar simulator.jar \*TFM_STYLE\* \*TIME_IN_MINUTES\* \*SEED\* \*NUMBER_OF_MINERS\* \*OUTPUT_FILENAME\* \*INPUT_FILENAME\*
 
-e.g. java -jar main.jar second_price 1440 89433 15 sp_logs blockchair_ethereum_transactions_20221009.tsv
+e.g. java -jar simulator.jar second_price 1440 89433 15 sp_logs blockchair_ethereum_transactions_20221009.tsv
 
 ***
 
