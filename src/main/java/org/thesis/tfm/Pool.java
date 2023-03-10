@@ -2,6 +2,7 @@ package org.thesis.tfm;
 
 import org.thesis.blockchain.Block;
 import org.thesis.blockchain.Data;
+import org.thesis.blockchain.Miner;
 import org.thesis.blockchain.Transaction;
 
 import java.math.BigDecimal;
@@ -9,10 +10,17 @@ import java.util.ArrayList;
 
 public class Pool extends AbstractTFM {
     private final static String type = "Reserve Pool";
+    private double maxSharedTake = 1; // percentage of how much of the payout can be taken away from shared pool
 
     public Pool() {
         super(type);
     }
+
+    public Pool(double mst) {
+        super(type);
+        this.maxSharedTake = mst;
+    }
+
 
     // used for logging each tx data
     public String[] logStart(int i, String h, long f) {
@@ -34,7 +42,7 @@ public class Pool extends AbstractTFM {
                 "Block Reward",
                 "Gas Limit",
                 "Block Size (gas)",
-                "Number of Confirmed TX",
+                "Number of TX",
                 "Base Fee",
                 "Reserve Pool",
                 "TX Index",
@@ -45,7 +53,7 @@ public class Pool extends AbstractTFM {
 
     // Main EIP-1559 Mechanism Implementation
     @Override
-    public Data fetchValidTX(ArrayList<Transaction> m, long gasLimit, Block b) {
+    public Data fetchValidTX(ArrayList<Transaction> m, long gasLimit, Block b, Miner miner) {
         // sort current mempool by highest gas price offered
         m.sort((t1, t2) -> Long.compare(t2.getGasPrice(), t1.getGasPrice()));
 
@@ -96,19 +104,34 @@ public class Pool extends AbstractTFM {
             }
         }
 
-        // calculate optimal payout
+        // calculate optimal payout for the block, and how much of it can be taken from the shared pool
         BigDecimal payout = new BigDecimal(baseFee * 15_000_000);
+        BigDecimal maxTakeout = payout.multiply(BigDecimal.valueOf(maxSharedTake));
 
         // if current block payout is less than optimal payout, take rest from reserve pool if it is not empty already
         if(rewards.subtract(payout).signum() == -1 && pool.signum() == 1) {
             BigDecimal dif = payout.subtract(rewards);
-            pool = pool.subtract(dif);
-            rewards = payout;
+            if(dif.compareTo(maxTakeout) > 0) dif = maxTakeout;
+
+            // if pool doesn't contain enough coin to fully payout miner, take whatever is possible
+            if(dif.compareTo(pool) > 0) {
+                rewards = rewards.add(pool);
+                pool = pool.subtract(dif);
+            }
+            // else just take what's needed
+            else {
+                pool = pool.subtract(dif);
+                rewards = payout;
+            }
+
+            miner.updatePoolEffect(dif.negate());
         }
         // else add extra revenue back to pool, only award miner the optimal payout
         else {
             BigDecimal dif = rewards.subtract(payout);
             pool = pool.add(dif);
+            miner.updatePoolEffect(dif);
+
             rewards = payout;
         }
 

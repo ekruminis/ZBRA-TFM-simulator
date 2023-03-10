@@ -91,4 +91,18 @@ public class Data {
 
         this.logs = l;
     }
+
+    // Burning 2nd Price Data Style
+    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, ArrayList<Transaction> uc, BigDecimal r, long f, BigDecimal b, long gu, ArrayList<String[]> l) {
+        this.mempool = m;
+        this.confirmed = c;
+        this.unconfirmed = uc;
+
+        this.gas_used = gu;
+        this.rewards = r;
+        this.burned = b;
+        this.baseFee = f;
+
+        this.logs = l;
+    }
 }

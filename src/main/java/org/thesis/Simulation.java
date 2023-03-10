@@ -116,12 +116,12 @@ public class Simulation {
                 break;
             }
 
-            // decide which tx to confirm in a block cycle, output is all the data required for logging
-            Data results = tfm.fetchValidTX(mempool, GAS_LIMIT, blockchain.get(blockchain.size()-1));
-            mempool = results.getMempool();
-
             // assign a winning miner of the block based on their stake value
             Miner winnerMiner = Objects.requireNonNull(getWinningMiner());
+
+            // decide which tx to confirm in a block cycle, output is all the data required for logging
+            Data results = tfm.fetchValidTX(mempool, GAS_LIMIT, blockchain.get(blockchain.size()-1), winnerMiner);
+            mempool = results.getMempool();
 
             // append block to the blockchain
             String time = Instant.now().toString();
@@ -174,6 +174,13 @@ public class Simulation {
                         basics2 = Arrays.copyOf(basics, basics.length + 2);
                         basics2[basics.length] = String.valueOf(blockchain.get(blockchain.size() - 1).getBaseFee());
                         basics2[basics.length+1] = String.valueOf(blockchain.get(blockchain.size() - 1).getPool());
+                    }
+
+                    else if(tfm.getType().equals("Burning 2nd Price Auction")){
+                        basics2 = Arrays.copyOf(basics, basics.length + 3);
+                        basics2[basics.length] = String.valueOf(blockchain.get(blockchain.size() - 1).getUnconfirmedTXs().size());
+                        basics2[basics.length+1] = String.valueOf(blockchain.get(blockchain.size() - 1).getBaseFee());
+                        basics2[basics.length+2] = String.valueOf(blockchain.get(blockchain.size() - 1).getBurned());
                     }
 
                     // write main log data
@@ -231,11 +238,13 @@ public class Simulation {
             bsArr.add(new BigDecimal(blockchain.get(i).getGasUsed()));
 
             try {
-                for (Transaction t : blockchain.get(i).getConfirmedTXs()) {
-                    blockFee = blockFee.add(new BigDecimal(t.getFee()));
-                }
+                if(blockchain.get(i).getTXNumber() > 0) {
+                    for (Transaction t : blockchain.get(i).getConfirmedTXs()) {
+                        blockFee = blockFee.add(new BigDecimal(t.getFee()));
+                    }
 
-                blockFee = blockFee.divide(new BigDecimal(blockchain.get(i).getTXNumber()), 10, ROUND_HALF_EVEN).divide(wei, 10, ROUND_HALF_EVEN);
+                    blockFee = blockFee.divide(new BigDecimal(blockchain.get(i).getTXNumber()), 10, ROUND_HALF_EVEN).divide(wei, 10, ROUND_HALF_EVEN);
+                }
             } catch (Exception e) {
                 System.out.println("error in csvEnd() for blockFee; " + e);
             }
@@ -281,7 +290,7 @@ public class Simulation {
         IntStream.range(0, 5).forEach(i -> sumCW.writeRow("")); // create empty space in file, just for better readability
 
         // log miner summary data
-        sumCW.writeRow("Miner ID", "% of Stake Power", "Total Payout", "% of Total Network Payout");
+        sumCW.writeRow("Miner ID", "% of Stake Power", "Total Payout", "% of Total Network Payout", "Shared Pool Effect", "Private Pool");
         DecimalFormat df = new DecimalFormat("#.####");
         df.setRoundingMode(RoundingMode.HALF_UP);
         BigDecimal tp = totalPayout.divide(wei, 10, ROUND_HALF_EVEN);
@@ -290,18 +299,22 @@ public class Simulation {
                     String.valueOf(m.getID()),
                     String.valueOf((Double.parseDouble(df.format(((double)m.getStake()/totalStake))))),
                     String.valueOf(m.getRewards()),
-                    String.valueOf(m.getRewards().divide(tp, 10, ROUND_HALF_EVEN))
+                    String.valueOf(m.getRewards().divide(tp, 10, ROUND_HALF_EVEN)),
+                    String.valueOf(m.getPoolEffect().divide(wei, 10, ROUND_HALF_EVEN)),
+                    String.valueOf(m.getPrivatePool())
             );
         }
 
         IntStream.range(0, 5).forEach(i -> sumCW.writeRow("")); // create empty space in file, just for better readability
 
         // log block summary data
-        sumCW.writeRow("Block Index", "Gas Used", "% of max gas cap", "Miner ID", "Miner Rewards", "Avg. fee", "Pool", "Base Fee");
+        sumCW.writeRow("Block Index", "Gas Used", "% of max gas cap", "Miner ID", "Miner Rewards", "Total Burned", "Avg. fee", "Pool", "Base Fee");
         for (int i = 1; i < blockchain.size(); i++) {
             BigDecimal b = new BigDecimal("0");
             try {
-                b = (blockchain.get(i).getRewards().add(blockchain.get(i).getBurned())).divide(wei, 10, ROUND_HALF_EVEN).divide(new BigDecimal(blockchain.get(i).getTXNumber()), 10, ROUND_HALF_EVEN);
+                if(blockchain.get(i).getTXNumber() > 0) {
+                    b = (blockchain.get(i).getRewards().add(blockchain.get(i).getBurned())).divide(wei, 10, ROUND_HALF_EVEN).divide(new BigDecimal(blockchain.get(i).getTXNumber()), 10, ROUND_HALF_EVEN);
+                }
             }
             catch (Exception e) {
                 System.out.println("error in csvEnd() avg fee; " + e);
@@ -312,6 +325,7 @@ public class Simulation {
                     String.valueOf((double) blockchain.get(i).getGasUsed() / GAS_LIMIT),
                     String.valueOf(blockchain.get(i).getMinerID()),
                     String.valueOf(blockchain.get(i).getRewards().divide(wei, 10, ROUND_HALF_EVEN)),
+                    String.valueOf(blockchain.get(i).getBurned().divide(wei, 10, ROUND_HALF_EVEN)),
                     String.valueOf(b),
                     String.valueOf(blockchain.get(i).getPool().divide(wei, 10, ROUND_HALF_EVEN)),
                     String.valueOf((new BigDecimal(blockchain.get(i).getBaseFee())).divide(wei, 10, ROUND_HALF_EVEN))

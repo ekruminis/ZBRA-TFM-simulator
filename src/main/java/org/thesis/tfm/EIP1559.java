@@ -2,6 +2,7 @@ package org.thesis.tfm;
 
 import org.thesis.blockchain.Block;
 import org.thesis.blockchain.Data;
+import org.thesis.blockchain.Miner;
 import org.thesis.blockchain.Transaction;
 
 import java.math.BigDecimal;
@@ -36,9 +37,9 @@ public class EIP1559 extends AbstractTFM {
                 "Block Reward",
                 "Gas Limit",
                 "Block Size (gas)",
-                "Number of Confirmed TX",
+                "Number of TX",
                 "Base Fee",
-                "Fees burned",
+                "Fees Burned",
                 "TX Index",
                 "TX Hash",
                 "TX Paid",
@@ -49,7 +50,7 @@ public class EIP1559 extends AbstractTFM {
 
     // Main EIP-1559 Mechanism Implementation
     @Override
-    public Data fetchValidTX(ArrayList<Transaction> m, long gasLimit, Block b) {
+    public Data fetchValidTX(ArrayList<Transaction> m, long gasLimit, Block b, Miner miner) {
         // sort current mempool by highest gas price offered
         m.sort((t1, t2) -> Long.compare(t2.getGasPrice(), t1.getGasPrice()));
 
