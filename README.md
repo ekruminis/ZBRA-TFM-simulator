@@ -16,6 +16,8 @@ e.g. java -jar simulator.jar second_price 1440 89433 15 sp_logs blockchair_ether
 
 - **pool** -> Reserve Pool TFM *(i.e. attach txs based on dynamic base fee, pay miners optimal payout (base_fee * block_target_size), give rest to the shared pool)*
 
+- **burning_second_price** -> Burning 2nd Price Auction TFM *(i.e. attach highest offering txs, top N txs are confirmed, {block_size - N} txs are unconfirmed, users only pay the fee of the highest unconfirmed txs, miner payout is total of fees from unconfirmed txs, any surplus is burned.)* based on Chung/Shi paper - https://arxiv.org/pdf/2111.03151.pdf
+
 ### Others
 - TIME_IN_MINUTES = based on 12sec block cycle, so each minute will simulate 5 blocks
 - SEED = random integer value for seed which determines the txs to add to the mempool in each block cycle
