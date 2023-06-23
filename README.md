@@ -1,9 +1,9 @@
 # TFM Simulation
 
 ## Example (using .jar)
-java -jar simulator.jar \*TFM_STYLE\* \*TIME_IN_MINUTES\* \*SEED\* \*NUMBER_OF_MINERS\* \*OUTPUT_FILENAME\* \*INPUT_FILENAME\*
+java -jar simulator.jar \*TFM_STYLE\* \*NUMBER_OF_BLOCK_CYCLES\* \*SEED\* \*NUMBER_OF_MINERS\* \*OUTPUT_FILENAME\* \*INPUT_FILENAME\*
 
-e.g. java -jar simulator.jar second_price 1440 89433 15 sp_logs blockchair_ethereum_transactions_20221009.tsv
+e.g. java -jar simulator.jar second_price 144 89433 15 sp_logs txs-week.json
 
 ***
 
@@ -19,11 +19,8 @@ e.g. java -jar simulator.jar second_price 1440 89433 15 sp_logs blockchair_ether
 - **burning_second_price** -> Burning 2nd Price Auction TFM *(i.e. attach highest offering txs, top N txs are confirmed, {block_size - N} txs are unconfirmed, users only pay the fee of the highest unconfirmed txs, miner payout is total of fees from unconfirmed txs, any surplus is burned.)* based on Chung/Shi paper - https://arxiv.org/pdf/2111.03151.pdf
 
 ### Others
-- TIME_IN_MINUTES = based on 12sec block cycle, so each minute will simulate 5 blocks
+- NUMBER_OF_BLOCK_CYCLES = based on a 10min block cycle
 - SEED = random integer value for seed which determines the txs to add to the mempool in each block cycle
 - NUMBER_OF_MINERS = randomly generates X number of miners with individual stake values
 - OUTPUT_FILENAME = end of simulation will produce a .csv file containing logged data in the "output" folder
 - INPUT_FILENAME = name of dataset file (file extension must be specified), must be in a "input" folder of the same directory
-
-#### Sample Dataset
-Ethereum confirmed transactions from 2022-10-09 (1mil+ txs) : https://drive.google.com/file/d/1gUoJucQlGA1JXnNlRJXHGIl8ckF_e_GH
