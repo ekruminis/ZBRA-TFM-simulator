@@ -7,8 +7,8 @@ public class Data {
     ArrayList<Transaction> mempool;
     ArrayList<Transaction> confirmed;
     ArrayList<Transaction> unconfirmed = new ArrayList<>();
-    long gas_used;
-    long baseFee;
+    double size;
+    double baseFee;
     BigDecimal sharedPool = new BigDecimal(0);
     BigDecimal rewards = new BigDecimal(0);
     BigDecimal burned = new BigDecimal(0);
@@ -26,8 +26,8 @@ public class Data {
         return confirmed;
     }
 
-    public long getGasUsed() {
-        return gas_used;
+    public double getSize() {
+        return size;
     }
 
     public ArrayList<String[]> getLogs() {
@@ -38,16 +38,16 @@ public class Data {
 
     public BigDecimal getBurned() { return burned; }
 
-    public long getBaseFee() { return baseFee; }
+    public double getBaseFee() { return baseFee; }
 
     public BigDecimal getPool() { return sharedPool; }
 
     // First-Price Data Style
-    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, long gu, ArrayList<String[]> l) {
+    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, double gu, ArrayList<String[]> l) {
         this.mempool = m;
         this.confirmed = c;
 
-        this.gas_used = gu;
+        this.size = gu;
         this.rewards = r;
         this.baseFee = -1;
 
@@ -55,11 +55,11 @@ public class Data {
     }
 
     // Second-Price Data Style
-    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, long f, long gu, ArrayList<String[]> l) {
+    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, double f, double gu, ArrayList<String[]> l) {
         this.mempool = m;
         this.confirmed = c;
 
-        this.gas_used = gu;
+        this.size = gu;
         this.rewards = r;
         this.baseFee = f;
 
@@ -67,11 +67,11 @@ public class Data {
     }
 
     // EIP-1559 Data Style
-    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, BigDecimal b, long f, long gu, ArrayList<String[]> l) {
+    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, BigDecimal b, double f, double gu, ArrayList<String[]> l) {
         this.mempool = m;
         this.confirmed = c;
 
-        this.gas_used = gu;
+        this.size = gu;
         this.rewards = r;
         this.burned = b;
         this.baseFee = f;
@@ -80,11 +80,11 @@ public class Data {
     }
 
     // Pool Data Style
-    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, long f, BigDecimal s, long gu, ArrayList<String[]> l) {
+    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, double f, BigDecimal s, double gu, ArrayList<String[]> l) {
         this.mempool = m;
         this.confirmed = c;
 
-        this.gas_used = gu;
+        this.size = gu;
         this.rewards = r;
         this.sharedPool = s;
         this.baseFee = f;
@@ -93,12 +93,12 @@ public class Data {
     }
 
     // Burning 2nd Price Data Style
-    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, ArrayList<Transaction> uc, BigDecimal r, long f, BigDecimal b, long gu, ArrayList<String[]> l) {
+    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, ArrayList<Transaction> uc, BigDecimal r, double f, BigDecimal b, double gu, ArrayList<String[]> l) {
         this.mempool = m;
         this.confirmed = c;
         this.unconfirmed = uc;
 
-        this.gas_used = gu;
+        this.size = gu;
         this.rewards = r;
         this.burned = b;
         this.baseFee = f;

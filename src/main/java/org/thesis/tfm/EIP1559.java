@@ -16,7 +16,7 @@ public class EIP1559 extends AbstractTFM {
     }
 
     // used for logging each tx data
-    public String[] logStart(int i, String h, long f, BigDecimal b, BigDecimal t) {
+    public String[] logStart(int i, String h, double f, BigDecimal b, BigDecimal t) {
         return new String[] {
                 String.valueOf(i),
                 h,
@@ -35,8 +35,8 @@ public class EIP1559 extends AbstractTFM {
                 "Current Hash",
                 "Miner ID",
                 "Block Reward",
-                "Gas Limit",
-                "Block Size (gas)",
+                "Size Limit",
+                "Block Size",
                 "Number of TX",
                 "Base Fee",
                 "Fees Burned",
@@ -50,18 +50,18 @@ public class EIP1559 extends AbstractTFM {
 
     // Main EIP-1559 Mechanism Implementation
     @Override
-    public Data fetchValidTX(ArrayList<Transaction> m, long gasLimit, Block b, Miner miner) {
-        // sort current mempool by highest gas price offered
-        m.sort((t1, t2) -> Long.compare(t2.getGasPrice(), t1.getGasPrice()));
+    public Data fetchValidTX(ArrayList<Transaction> m, double blockLimit, Block b, Miner miner, double target) {
+        // sort current mempool by highest fee per byte price offered
+        m.sort((t1, t2) -> Double.compare(t2.getByte_fee(), t1.getByte_fee()));
 
-        long gasUsedUp = 0; // total gas used by current block
+        double sizeUsedUp = 0; // total bytes used by current block
         ArrayList<String[]> logs = new ArrayList<String[]>(); // log data for printing later
         ArrayList<Transaction> txList = new ArrayList<Transaction>(); // list of *confirmed* transactions
         BigDecimal rewards = new BigDecimal("0"); // total rewards given to miner
         BigDecimal burned = new BigDecimal("0"); // total burned
 
-        // calculate base fee for this current block (max of 12.5% update), based on 15mil optimal block target
-        long baseFee = (long)((double)b.getBaseFee()*(1.0+0.125*(((double)b.getGasUsed()-(double)15_000_000)/(double)15_000_000)));
+        // calculate base fee for this current block (max of 12.5% update in a single cycle)
+        double baseFee = (b.getBaseFee()*(1.0+0.125*((b.getSize()-target)/target)));
 
         int index = 1;
 
@@ -69,21 +69,21 @@ public class EIP1559 extends AbstractTFM {
             // if mempool is not empty..
             if(!m.isEmpty()) {
                 // if block is not yet filled to capacity..
-                if ((gasUsedUp + m.get(0).getGasUsed()) < gasLimit) {
+                if ((sizeUsedUp + m.get(0).getSize()) < blockLimit) {
                     // if current mempool tx is capable of paying base fee..
-                    if(m.get(0).getGasPrice() >= baseFee) {
+                    if(m.get(0).getByte_fee() >= baseFee) {
                         // add to *confirmed* tx list
                         txList.add(m.get(0));
 
                         // update parameters
-                        gasUsedUp += m.get(0).getGasUsed();
-                        BigDecimal burn = new BigDecimal(baseFee * m.get(0).getGasUsed());
+                        sizeUsedUp += m.get(0).getSize();
+                        BigDecimal burn = new BigDecimal(baseFee * m.get(0).getSize());
                         burned = burned.add(burn);
-                        BigDecimal val = new BigDecimal( m.get(0).getFee()).subtract(burn);
+                        BigDecimal val = new BigDecimal( m.get(0).getTotal_fee()).subtract(burn);
                         rewards = rewards.add(val);
 
                         // log data
-                        logs.add(logStart(index, m.get(0).getHash(), m.get(0).getFee(), burn, val));
+                        logs.add(logStart(index, m.get(0).getHash(), m.get(0).getTotal_fee(), burn, val));
 
                         // remove from mempool and continue..
                         m.remove(0);
@@ -103,6 +103,6 @@ public class EIP1559 extends AbstractTFM {
             }
         }
 
-        return new Data(m, txList, rewards, burned, baseFee, gasUsedUp, logs);
+        return new Data(m, txList, rewards, burned, baseFee, sizeUsedUp, logs);
     }
 }

@@ -23,7 +23,7 @@ public class Pool extends AbstractTFM {
 
 
     // used for logging each tx data
-    public String[] logStart(int i, String h, long f) {
+    public String[] logStart(int i, String h, double f) {
         return new String[] {
                 String.valueOf(i),
                 h,
@@ -40,8 +40,8 @@ public class Pool extends AbstractTFM {
                 "Current Hash",
                 "Miner ID",
                 "Block Reward",
-                "Gas Limit",
-                "Block Size (gas)",
+                "Size Limit",
+                "Block Size",
                 "Number of TX",
                 "Base Fee",
                 "Reserve Pool",
@@ -53,18 +53,18 @@ public class Pool extends AbstractTFM {
 
     // Main EIP-1559 Mechanism Implementation
     @Override
-    public Data fetchValidTX(ArrayList<Transaction> m, long gasLimit, Block b, Miner miner) {
-        // sort current mempool by highest gas price offered
-        m.sort((t1, t2) -> Long.compare(t2.getGasPrice(), t1.getGasPrice()));
+    public Data fetchValidTX(ArrayList<Transaction> m, double blockLimit, Block b, Miner miner, double target) {
+        // sort current mempool by highest fee per byte price offered
+        m.sort((t1, t2) -> Double.compare(t2.getByte_fee(), t1.getByte_fee()));
 
-        long gasUsedUp = 0; // total gas used by current block
+        double sizeUsedUp = 0; // total bytes used by current block
         ArrayList<String[]> logs = new ArrayList<String[]>(); // log data for printing later
         ArrayList<Transaction> txList = new ArrayList<Transaction>(); // list of *confirmed* transactions
         BigDecimal rewards = new BigDecimal("0"); // total rewards given to miner
         BigDecimal pool = b.getPool(); // get current pool reserves level
 
-        // calculate base fee for this current block (max of 12.5% update), based on 15mil optimal block target
-        long baseFee = (long)((double)b.getBaseFee()*(1.0+0.125*(((double)b.getGasUsed()-(double)15_000_000)/(double)15_000_000)));
+        // calculate base fee for this current block (max of 12.5% update in a single cycle)
+        double baseFee = (b.getBaseFee()*(1.0+0.125*((b.getSize()-target)/target)));
 
         int index = 1;
 
@@ -72,19 +72,19 @@ public class Pool extends AbstractTFM {
             // if mempool is not empty..
             if(!m.isEmpty()) {
                 // if block is not yet filled to capacity..
-                if ((gasUsedUp + m.get(0).getGasUsed()) < gasLimit) {
+                if ((sizeUsedUp + m.get(0).getSize()) < blockLimit) {
                     // if current mempool tx is capable of paying base fee..
-                    if(m.get(0).getGasPrice() >= baseFee) {
+                    if(m.get(0).getByte_fee() >= baseFee) {
                         // add to *confirmed* tx list
                         txList.add(m.get(0));
 
                         // update parameters
-                        BigDecimal val = new BigDecimal(m.get(0).getFee());
+                        BigDecimal val = new BigDecimal(m.get(0).getTotal_fee());
                         rewards = rewards.add(val);
-                        gasUsedUp += m.get(0).getGasUsed();
+                        sizeUsedUp += m.get(0).getSize();
 
                         // log data
-                        logs.add(logStart(index, m.get(0).getHash(), m.get(0).getFee()));
+                        logs.add(logStart(index, m.get(0).getHash(), m.get(0).getTotal_fee()));
 
                         // remove from mempool and continue..
                         m.remove(0);
@@ -105,7 +105,7 @@ public class Pool extends AbstractTFM {
         }
 
         // calculate optimal payout for the block, and how much of it can be taken from the shared pool
-        BigDecimal payout = new BigDecimal(baseFee * 15_000_000);
+        BigDecimal payout = new BigDecimal(baseFee * target);
         BigDecimal maxTakeout = payout.multiply(BigDecimal.valueOf(maxSharedTake));
 
         // if current block payout is less than optimal payout, take rest from reserve pool if it is not empty already
@@ -135,6 +135,6 @@ public class Pool extends AbstractTFM {
             rewards = payout;
         }
 
-        return new Data(m, txList, rewards, baseFee, pool, gasUsedUp, logs);
+        return new Data(m, txList, rewards, baseFee, pool, sizeUsedUp, logs);
     }
 }

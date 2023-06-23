@@ -1,6 +1,6 @@
 package org.thesis;
 
-import de.siegmar.fastcsv.reader.*;
+import com.google.gson.*;
 import de.siegmar.fastcsv.writer.CsvWriter;
 import org.apache.commons.lang3.ArrayUtils;
 import org.thesis.blockchain.Block;
@@ -9,6 +9,8 @@ import org.thesis.blockchain.Data;
 import org.thesis.blockchain.Transaction;
 import org.thesis.tfm.AbstractTFM;
 
+
+import java.io.FileReader;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
@@ -43,41 +45,42 @@ public class Simulation {
     int totalStake = -1; // total stake for all miners
 
     BigDecimal totalPayout = new BigDecimal("0"); // total payout awarded to all miners (summary logging)
-    BigDecimal wei = new BigDecimal("1000000000000000000");
     ArrayList<Block> blockchain = new ArrayList<Block>(); // arraylist of all blocks
-    final long GAS_LIMIT = 30000000;
 
-    // print out headers depending on tfm + read input file and add all tx to dataset
-    public void csvStart() throws IOException {
+    final long SIZE_LIMIT = 2_000_000;
+    final long TARGET = 1_000_000;
+
+    // print out headers depending on tfm + read input file and load all tx to dataset
+    public void jsonStart() throws IOException {
         mainCW.writeComment(Arrays.toString(tfm.logHeaders()));
-
-        try (NamedCsvReader csv = NamedCsvReader.builder().fieldSeparator('\t').build(inputPath)) {
-            try {
-                for (NamedCsvRow cr : csv) {
-                    // exclude block reward txs
-                    if(!cr.getField("type").equals("synthetic_coinbase")) {
-                        data.add(new Transaction(
-                                    cr.getField("hash"),
-                                    Long.parseLong(cr.getField("gas_used")),
-                                    Long.parseLong(cr.getField("gas_price"))
-                                )
-                        );
+        Transaction t = new Transaction("h", 1, 1);
+        try (FileReader reader = new FileReader(inputPath.toFile())) {
+            JsonElement rootElement = JsonParser.parseReader(reader);
+            if (rootElement.isJsonArray()) {
+                JsonArray jsonArray = rootElement.getAsJsonArray();
+                Gson gson = new GsonBuilder().create();
+                for (JsonElement jsonElement : jsonArray) {
+                    if(jsonElement.isJsonObject()) {
+                        t = new Transaction(jsonElement.getAsJsonObject().get("hash").getAsString(), jsonElement.getAsJsonObject().get("size").getAsDouble(), jsonElement.getAsJsonObject().get("fee").getAsDouble());
+                        data.add(t);
                     }
+                    //System.out.println(transaction);
                 }
-            } catch (MalformedCsvException mce) {
-                System.out.println("errored; " + mce);
             }
+        } catch (IOException e) {
+            e.printStackTrace();
+            System.out.println("err;" + t);
         }
+
     }
 
     // add random number of txs to the mempool, draw randomly from complete dataset
     public void fetchTX() {
         try {
-            //PoissonDistribution p = new PoissonDistribution(200.0);
-            int p = r1.nextInt(300)+1;
+            PoissonDistribution p = new PoissonDistribution(4000);
+            int y = (int)(p.sample()*r1.nextDouble(2));
 
-            //for (int i = 0; i < p.sample(); i++) {
-            for (int i = 0; i < p; i++) {
+            for (int i = 0; i < y; i++) {
                 int x = r2.nextInt(data.size());
                 mempool.add(data.get(x));
                 data.remove(x);
@@ -90,19 +93,26 @@ public class Simulation {
 
     // main simulation method
     public void simulate() throws IOException {
-        int cycles = time * 5; //time in minutes, new block every 12s so x5 every minute
+        int cycles = time;
 
-        csvStart(); // log headers + fill dataset
+        jsonStart();
 
         blockchain.add(new Block()); // create *GENESIS* block
 
         if(tfm.getType().equals("EIP-1559") || tfm.getType().equals("Reserve Pool")) {
             // set base fee to what it was on 2022-10-09 (dataset)
-            blockchain.get(0).setBaseFee(19550000000L);
+            blockchain.get(0).setBaseFee(0.00000035); // TODO ***
             if (tfm.getType().equals("Reserve Pool")) {
-                // initialise reserve pool with 10 ETH at start
-                blockchain.get(0).updatePool(new BigDecimal("10000000000000000000"));
+                // initialise reserve pool with 10 BTC at start
+                blockchain.get(0).updatePool(new BigDecimal("10")); // TODO ***
             }
+        }
+
+        // add 20,000 tx at the very start (initial mempool)
+        for (int i = 0; i < 20_000; i++) {
+            int x = r2.nextInt(data.size());
+            mempool.add(data.get(x));
+            data.remove(x);
         }
 
         // while there are blocks to mine and dataset has not been exhausted..
@@ -120,7 +130,7 @@ public class Simulation {
             Miner winnerMiner = Objects.requireNonNull(getWinningMiner());
 
             // decide which tx to confirm in a block cycle, output is all the data required for logging
-            Data results = tfm.fetchValidTX(mempool, GAS_LIMIT, blockchain.get(blockchain.size()-1), winnerMiner);
+            Data results = tfm.fetchValidTX(mempool, SIZE_LIMIT, blockchain.get(blockchain.size()-1), winnerMiner, TARGET);
             mempool = results.getMempool();
 
             // append block to the blockchain
@@ -130,7 +140,7 @@ public class Simulation {
                     winnerMiner.getID(),
                     (blockchain.get(blockchain.size()-1).getCurrentHash()),
                     org.apache.commons.codec.digest.DigestUtils.sha256Hex( time ), // TODO redo
-                    GAS_LIMIT,
+                    SIZE_LIMIT,
                     results
                     ));
 
@@ -144,8 +154,8 @@ public class Simulation {
                     blockchain.get(blockchain.size()-1).getCurrentHash(),
                     String.valueOf(blockchain.get(blockchain.size()-1).getMinerID()),
                     String.valueOf(blockchain.get(blockchain.size()-1).getRewards()),
-                    String.valueOf(GAS_LIMIT),
-                    String.valueOf(blockchain.get(blockchain.size()-1).getGasUsed()),
+                    String.valueOf(SIZE_LIMIT),
+                    String.valueOf(blockchain.get(blockchain.size()-1).getSize()),
                     String.valueOf(blockchain.get(blockchain.size()-1).getTXNumber())
             };
 
@@ -192,7 +202,7 @@ public class Simulation {
             cycles--;
 
             // update miner winnings data (for summary log file)
-            winnerMiner.updateWinnings(blockchain.get(blockchain.size()-1).getRewards().divide(wei, 10, ROUND_HALF_EVEN));
+            winnerMiner.updateWinnings(blockchain.get(blockchain.size()-1).getRewards());
         }
 
         // finished simulation, log summary of results
@@ -232,18 +242,19 @@ public class Simulation {
         for (int i = 1; i < blockchain.size(); i++) {
             BigDecimal blockFee = new BigDecimal("0");
             bp = bp.add(blockchain.get(i).getRewards());
-            bs = bs.add(new BigDecimal(blockchain.get(i).getGasUsed()));
+            bs = bs.add(new BigDecimal(blockchain.get(i).getSize()));
 
-            bpArr.add(blockchain.get(i).getRewards().divide(wei, 10, ROUND_HALF_EVEN));
-            bsArr.add(new BigDecimal(blockchain.get(i).getGasUsed()));
+            bpArr.add(blockchain.get(i).getRewards());
+            bsArr.add(new BigDecimal(blockchain.get(i).getSize()));
 
             try {
                 if(blockchain.get(i).getTXNumber() > 0) {
                     for (Transaction t : blockchain.get(i).getConfirmedTXs()) {
-                        blockFee = blockFee.add(new BigDecimal(t.getFee()));
+                        blockFee = blockFee.add(new BigDecimal(t.getTotal_fee()));
                     }
-
-                    blockFee = blockFee.divide(new BigDecimal(blockchain.get(i).getTXNumber()), 10, ROUND_HALF_EVEN).divide(wei, 10, ROUND_HALF_EVEN);
+                    if(blockFee.compareTo(BigDecimal.ZERO) > 0) {
+                        blockFee = blockFee.divide(new BigDecimal(blockchain.get(i).getTXNumber()), 10, ROUND_HALF_EVEN);
+                    }
                 }
             } catch (Exception e) {
                 System.out.println("error in csvEnd() for blockFee; " + e);
@@ -254,7 +265,7 @@ public class Simulation {
 
         }
 
-        BigDecimal meanPay = bp.divide( (new BigDecimal(blockchain.size()-1) ), 10, RoundingMode.HALF_EVEN).divide(wei, 10, ROUND_HALF_EVEN);
+        BigDecimal meanPay = bp.divide( (new BigDecimal(blockchain.size()-1) ), 10, RoundingMode.HALF_EVEN);
         BigDecimal meanFee = tf.divide( (new BigDecimal(blockchain.size()-1) ), 10, RoundingMode.HALF_EVEN);
         BigDecimal meanSize = bs.divide( (new BigDecimal(blockchain.size()-1)), 10, RoundingMode.HALF_EVEN);
 
@@ -279,11 +290,11 @@ public class Simulation {
         sumCW.writeRow("TFM Type", "Avg. Block Payout", "Variance Between Block Payout", "Avg. TX Fee", "Variance Between TX Fees", "Avg. Block Size", "Block Size Variance");
         sumCW.writeRow(
                 tfm.getType(),
-                String.valueOf(bp.divide( (new BigDecimal(blockchain.size()-2) ), 10, RoundingMode.HALF_EVEN).divide(wei, 10, ROUND_HALF_EVEN)),
+                String.valueOf(bp.divide( (new BigDecimal(blockchain.size()-2) ), 10, RoundingMode.HALF_EVEN)),
                 String.valueOf((varPay.divide((new BigDecimal(blockchain.size()-1) ), BigDecimal.ROUND_HALF_UP)).sqrt(mc)),
                 String.valueOf(tf.divide( (new BigDecimal(blockchain.size()-2) ), 10, RoundingMode.HALF_EVEN)),
                 String.valueOf((varFee.divide((new BigDecimal(blockchain.size()-1) ), BigDecimal.ROUND_HALF_UP)).sqrt(mc)),
-                String.valueOf(bs.divide( (new BigDecimal(blockchain.size()-2)), 10, RoundingMode.HALF_EVEN).divide(new BigDecimal(GAS_LIMIT), 10, ROUND_HALF_EVEN)),
+                String.valueOf(bs.divide( (new BigDecimal(blockchain.size()-2)), 10, RoundingMode.HALF_EVEN).divide(new BigDecimal(SIZE_LIMIT), 10, ROUND_HALF_EVEN)),
                 String.valueOf((varSize.divide((new BigDecimal(blockchain.size()-1) ), BigDecimal.ROUND_HALF_UP)).sqrt(mc))
         );
 
@@ -293,16 +304,28 @@ public class Simulation {
         sumCW.writeRow("Miner ID", "% of Stake Power", "Total Payout", "% of Total Network Payout", "Shared Pool Effect", "Private Pool");
         DecimalFormat df = new DecimalFormat("#.####");
         df.setRoundingMode(RoundingMode.HALF_UP);
-        BigDecimal tp = totalPayout.divide(wei, 10, ROUND_HALF_EVEN);
+        BigDecimal tp = totalPayout;
         for (Miner m : miners) {
-            sumCW.writeRow(
-                    String.valueOf(m.getID()),
-                    String.valueOf((Double.parseDouble(df.format(((double)m.getStake()/totalStake))))),
-                    String.valueOf(m.getRewards()),
-                    String.valueOf(m.getRewards().divide(tp, 10, ROUND_HALF_EVEN)),
-                    String.valueOf(m.getPoolEffect().divide(wei, 10, ROUND_HALF_EVEN)),
-                    String.valueOf(m.getPrivatePool())
-            );
+            if(m.getRewards().compareTo(BigDecimal.ZERO) > 0) {
+                sumCW.writeRow(
+                        String.valueOf(m.getID()),
+                        String.valueOf((Double.parseDouble(df.format(((double) m.getStake() / totalStake))))),
+                        String.valueOf(m.getRewards()),
+                        String.valueOf(m.getRewards().divide(tp, 10, ROUND_HALF_EVEN)),
+                        String.valueOf(m.getPoolEffect()),
+                        String.valueOf(m.getPrivatePool())
+                );
+            }
+            else {
+                sumCW.writeRow(
+                        String.valueOf(m.getID()),
+                        String.valueOf((Double.parseDouble(df.format(((double)m.getStake()/totalStake))))),
+                        String.valueOf(m.getRewards()),
+                        String.valueOf(0),
+                        String.valueOf(m.getPoolEffect()),
+                        String.valueOf(m.getPrivatePool())
+                );
+            }
         }
 
         IntStream.range(0, 5).forEach(i -> sumCW.writeRow("")); // create empty space in file, just for better readability
@@ -313,7 +336,7 @@ public class Simulation {
             BigDecimal b = new BigDecimal("0");
             try {
                 if(blockchain.get(i).getTXNumber() > 0) {
-                    b = (blockchain.get(i).getRewards().add(blockchain.get(i).getBurned())).divide(wei, 10, ROUND_HALF_EVEN).divide(new BigDecimal(blockchain.get(i).getTXNumber()), 10, ROUND_HALF_EVEN);
+                    b = (blockchain.get(i).getRewards().add(blockchain.get(i).getBurned())).divide(new BigDecimal(blockchain.get(i).getTXNumber()), 10, ROUND_HALF_EVEN);
                 }
             }
             catch (Exception e) {
@@ -321,14 +344,14 @@ public class Simulation {
             }
             sumCW.writeRow(
                     String.valueOf(blockchain.get(i).getIndex()),
-                    String.valueOf(blockchain.get(i).getGasUsed()),
-                    String.valueOf((double) blockchain.get(i).getGasUsed() / GAS_LIMIT),
+                    String.valueOf(blockchain.get(i).getSize()),
+                    String.valueOf((double) blockchain.get(i).getSize() / SIZE_LIMIT),
                     String.valueOf(blockchain.get(i).getMinerID()),
-                    String.valueOf(blockchain.get(i).getRewards().divide(wei, 10, ROUND_HALF_EVEN)),
-                    String.valueOf(blockchain.get(i).getBurned().divide(wei, 10, ROUND_HALF_EVEN)),
+                    String.valueOf(blockchain.get(i).getRewards()),
+                    String.valueOf(blockchain.get(i).getBurned()),
                     String.valueOf(b),
-                    String.valueOf(blockchain.get(i).getPool().divide(wei, 10, ROUND_HALF_EVEN)),
-                    String.valueOf((new BigDecimal(blockchain.get(i).getBaseFee())).divide(wei, 10, ROUND_HALF_EVEN))
+                    String.valueOf(blockchain.get(i).getPool()),
+                    String.valueOf((new BigDecimal(blockchain.get(i).getBaseFee())))
                     );
         }
 

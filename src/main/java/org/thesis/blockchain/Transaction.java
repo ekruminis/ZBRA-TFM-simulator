@@ -2,40 +2,40 @@ package org.thesis.blockchain;
 
 public class Transaction {
     String hash;
-    long gas_used;
-    long gas_price;
-    long fee; // = gas_price * gas_used
+    double size; // in bytes
+    double byte_fee; // fee per byte
+    double total_fee; // total offered in fees
 
-    public Transaction(String h, long gu, long gp) {
+    public Transaction(String h, double s, double f) {
         this.hash = h;
-        this.gas_used = gu;
-        this.gas_price = gp;
-        this.fee = gas_used * gas_price;
+        this.size = s;
+        this.total_fee = f;
+        this.byte_fee = total_fee / size;
     }
 
     public String getHash() {
         return hash;
     }
 
-    public long getFee() {
-        return fee;
+    public double getSize() {
+        return size;
     }
 
-    public long getGasUsed() {
-        return gas_used;
+    public double getByte_fee() {
+        return byte_fee;
     }
 
-    public long getGasPrice() {
-        return gas_price;
+    public double getTotal_fee() {
+        return total_fee;
     }
 
     @Override
     public String toString() {
         return "Transaction{" +
                 "hash='" + hash + '\'' +
-                ", fee=" + fee +
-                ", gas_used=" + gas_used +
-                ", gas_price=" + gas_price +
+                ", size=" + size +
+                ", byte_fee=" + byte_fee +
+                ", total_fee=" + total_fee +
                 '}';
     }
 }

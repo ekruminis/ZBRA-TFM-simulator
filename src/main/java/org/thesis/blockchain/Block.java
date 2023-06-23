@@ -8,10 +8,10 @@ public class Block {
     int miner_id;
     String parent_hash;
     String current_hash;
-    long gas_limit;
-    long gas_used;
-    long base_fee;
-    long tx_number;
+    double size_limit;
+    double size;
+    double base_fee;
+    long tx_number; // number of transactions inside the block
     BigDecimal rewards; // total rewards paid directly to miner
     BigDecimal burned; // total amount burned
     BigDecimal pool; // total of current pool
@@ -25,9 +25,9 @@ public class Block {
         this.miner_id = -1;
         this.parent_hash = null;
         this.current_hash = "GENESIS";
-        this.gas_limit = -1;
-        this.gas_used = -1;
-        this.base_fee = -1;
+        this.size_limit = -1.0;
+        this.size = -1.0;
+        this.base_fee = -1.0;
         this.rewards = null;
         this.confirmed_txs = null;
         this.unconfirmed_txs = null;
@@ -37,14 +37,14 @@ public class Block {
     }
 
     // general block
-    public Block(int index, int miner_id, String parent_hash, String current_hash, long gas_limit, Data d) {
+    public Block(int index, int miner_id, String parent_hash, String current_hash, double limit, Data d) {
         this.index = index;
         this.miner_id = miner_id;
         this.parent_hash = parent_hash;
         this.current_hash = current_hash;
-        this.gas_limit = gas_limit;
+        this.size_limit = limit;
 
-        this.gas_used = d.getGasUsed();
+        this.size = d.getSize();
         this.base_fee = d.getBaseFee();
         this.rewards = d.getRewards();
         this.confirmed_txs = d.getConfirmed();
@@ -72,15 +72,15 @@ public class Block {
         return current_hash;
     }
 
-    public long getGasLimit() {
-        return gas_limit;
+    public double getSizeLimit() {
+        return size_limit;
     }
 
-    public long getGasUsed() {
-        return gas_used;
+    public double getSize() {
+        return size;
     }
 
-    public long getBaseFee() {
+    public double getBaseFee() {
         return base_fee;
     }
 
@@ -102,7 +102,7 @@ public class Block {
         return burned;
     }
 
-    public void setBaseFee(long bf) {
+    public void setBaseFee(double bf) {
         this.base_fee = bf;
     }
 
@@ -117,8 +117,8 @@ public class Block {
                 ", miner_id=" + miner_id +
                 ", parent_hash='" + parent_hash + '\'' +
                 ", current_hash='" + current_hash + '\'' +
-                ", gas_limit=" + gas_limit +
-                ", gas_used=" + gas_used +
+                ", size_limit=" + size_limit +
+                ", size=" + size +
                 ", base_fee=" + base_fee +
                 ", confirmed_txs=" + confirmed_txs +
                 ", unconfirmed_txs=" + unconfirmed_txs +

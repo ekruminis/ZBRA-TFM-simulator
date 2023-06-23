@@ -7,6 +7,7 @@ import org.thesis.blockchain.Transaction;
 
 import java.util.ArrayList;
 
+// Abstract class for different TFM styles
 public abstract class AbstractTFM {
     protected String type;
 
@@ -20,6 +21,6 @@ public abstract class AbstractTFM {
 
     abstract public String[] logHeaders();
 
-    abstract public Data fetchValidTX(ArrayList<Transaction> m, long g, Block b, Miner miner);
+    abstract public Data fetchValidTX(ArrayList<Transaction> m, double g, Block b, Miner miner, double target);
 
 }
