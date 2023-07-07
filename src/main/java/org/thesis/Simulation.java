@@ -22,6 +22,7 @@ import java.util.*;
 
 import java.io.IOException;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import org.apache.commons.math3.distribution.PoissonDistribution;
 
@@ -38,6 +39,7 @@ public class Simulation {
     CsvWriter sumCW; // csv write for summary log file
     Random r1; // random generator for number of tx to fetch
     Random r2; // random generator for which tx from dataset to take
+    Iterator<Transaction> iter;
 
     ArrayList<Transaction> data = new ArrayList<Transaction>(); // dataset containing all transactions from input file
     ArrayList<Transaction> mempool = new ArrayList<Transaction>(); // mempool arraylist
@@ -54,8 +56,8 @@ public class Simulation {
     public void jsonStart() throws IOException {
         mainCW.writeComment(Arrays.toString(tfm.logHeaders()));
         Transaction t = new Transaction("h", 1, 1);
-        try (FileReader reader = new FileReader(inputPath.toFile())) {
-            JsonElement rootElement = JsonParser.parseReader(reader);
+        try (FileReader fReader = new FileReader(inputPath.toFile())) {
+            JsonElement rootElement = JsonParser.parseReader(fReader);
             if (rootElement.isJsonArray()) {
                 JsonArray jsonArray = rootElement.getAsJsonArray();
                 Gson gson = new GsonBuilder().create();
@@ -64,9 +66,15 @@ public class Simulation {
                         t = new Transaction(jsonElement.getAsJsonObject().get("hash").getAsString(), jsonElement.getAsJsonObject().get("size").getAsDouble(), jsonElement.getAsJsonObject().get("fee").getAsDouble());
                         data.add(t);
                     }
-                    //System.out.println(transaction);
                 }
             }
+            System.out.println("dataset size; " + data.size());
+
+            // shuffle entire dataset and open up a stream for it
+            Collections.shuffle(data, r2);
+            Stream<Transaction> stream = data.stream();
+            iter = stream.iterator();
+
         } catch (IOException e) {
             e.printStackTrace();
             System.out.println("err;" + t);
@@ -80,11 +88,12 @@ public class Simulation {
             PoissonDistribution p = new PoissonDistribution(4000);
             int y = (int)(p.sample()*r1.nextDouble(2));
 
-            for (int i = 0; i < y; i++) {
-                int x = r2.nextInt(data.size());
-                mempool.add(data.get(x));
-                data.remove(x);
+            int x = 0;
+            while(iter.hasNext() && x < y) {
+                mempool.add(iter.next());
+                x++;
             }
+
         }
         catch (Exception e) {
             System.out.println("no more tx available!!");
@@ -108,15 +117,14 @@ public class Simulation {
             }
         }
 
-        // add 20,000 tx at the very start (initial mempool)
-        for (int i = 0; i < 20_000; i++) {
-            int x = r2.nextInt(data.size());
-            mempool.add(data.get(x));
-            data.remove(x);
+        int x = 0;
+        while(iter.hasNext() && x < 20_000) {
+            mempool.add(iter.next());
+            x++;
         }
 
         // while there are blocks to mine and dataset has not been exhausted..
-        while(cycles >= 0 && !data.isEmpty()) {
+        while(cycles >= 0 && iter.hasNext()) {
 
             // add new tx to current mempool
             try {
@@ -331,7 +339,7 @@ public class Simulation {
         IntStream.range(0, 5).forEach(i -> sumCW.writeRow("")); // create empty space in file, just for better readability
 
         // log block summary data
-        sumCW.writeRow("Block Index", "Gas Used", "% of max gas cap", "Miner ID", "Miner Rewards", "Total Burned", "Avg. fee", "Pool", "Base Fee");
+        sumCW.writeRow("Block Index", "Bytes Used", "% Of Max Block Size", "Miner ID", "Miner Rewards", "Total Burned", "Avg. fee", "Pool", "Base Fee");
         for (int i = 1; i < blockchain.size(); i++) {
             BigDecimal b = new BigDecimal("0");
             try {
@@ -373,13 +381,13 @@ public class Simulation {
 
         this.inputPath = Paths.get("input/"+i);
 
+        this.r1 = new Random(x);
+        this.r2 = new Random(x * 2);
+
         // randomly create miners + assign stake to them
         for (int j = 1; j < m; j++) {
-            miners.add(new Miner(j, new Random().nextInt(new PoissonDistribution(500, 190.0).sample())));
+            miners.add(new Miner(j, r2.nextInt(new PoissonDistribution(500, 190.0).sample())));
         }
-
-        this.r1 = new Random(x);
-        this.r2 = new Random(x * 10L);
 
         // total stake in the network
         totalStake = miners.stream().mapToInt(Miner::getStake).sum();
