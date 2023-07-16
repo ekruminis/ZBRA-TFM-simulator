@@ -15,6 +15,7 @@ public class Block {
     BigDecimal rewards; // total rewards paid directly to miner
     BigDecimal burned; // total amount burned
     BigDecimal pool; // total of current pool
+    Data logs;
 
     ArrayList<Transaction> confirmed_txs;
     ArrayList<Transaction> unconfirmed_txs;
@@ -34,6 +35,7 @@ public class Block {
         this.tx_number = -1;
         this.burned = null;
         this.pool = null;
+        this.logs = null;
     }
 
     // general block
@@ -52,6 +54,7 @@ public class Block {
         this.tx_number = d.getConfirmed().size() + d.getUnconfirmed().size();
         this.burned = d.getBurned();
         this.pool = d.getPool();
+        this.logs = d;
     }
 
     public BigDecimal getPool() { return pool; }
@@ -110,19 +113,8 @@ public class Block {
         this.pool = s;
     }
 
-    @Override
-    public String toString() {
-        return "Block{" +
-                "index=" + index +
-                ", miner_id=" + miner_id +
-                ", parent_hash='" + parent_hash + '\'' +
-                ", current_hash='" + current_hash + '\'' +
-                ", size_limit=" + size_limit +
-                ", size=" + size +
-                ", base_fee=" + base_fee +
-                ", confirmed_txs=" + confirmed_txs +
-                ", unconfirmed_txs=" + unconfirmed_txs +
-                '}';
+    public Data getLogs() {
+        return logs;
     }
 }
 

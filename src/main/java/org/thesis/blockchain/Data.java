@@ -13,6 +13,13 @@ public class Data {
     BigDecimal rewards = new BigDecimal(0);
     BigDecimal burned = new BigDecimal(0);
     ArrayList<String[]> logs;
+    long mempoolSize;
+    BigDecimal poolEffect;
+    boolean takeFromPublic;
+    boolean takeFromPrivate;
+    BigDecimal blockReward;
+    BigDecimal blockSurplus;
+    long txCount;
 
     public ArrayList<Transaction> getUnconfirmed() {
         return unconfirmed;
@@ -42,6 +49,38 @@ public class Data {
 
     public BigDecimal getPool() { return sharedPool; }
 
+    public BigDecimal getSharedPool() {
+        return sharedPool;
+    }
+
+    public long getMempoolSize() {
+        return mempoolSize;
+    }
+
+    public BigDecimal getPoolEffect() {
+        return poolEffect;
+    }
+
+    public boolean isTakeFromPublic() {
+        return takeFromPublic;
+    }
+
+    public boolean isTakeFromPrivate() {
+        return takeFromPrivate;
+    }
+
+    public BigDecimal getBlockReward() {
+        return blockReward;
+    }
+
+    public BigDecimal getBlockSurplus() {
+        return blockSurplus;
+    }
+
+    public long getTxCount() {
+        return txCount;
+    }
+
     // First-Price Data Style
     public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, double gu, ArrayList<String[]> l) {
         this.mempool = m;
@@ -50,6 +89,9 @@ public class Data {
         this.size = gu;
         this.rewards = r;
         this.baseFee = -1;
+
+        this.txCount = c.size();
+        this.mempoolSize = mempool.size();
 
         this.logs = l;
     }
@@ -62,6 +104,9 @@ public class Data {
         this.size = gu;
         this.rewards = r;
         this.baseFee = f;
+
+        this.txCount = c.size();
+        this.mempoolSize = mempool.size();
 
         this.logs = l;
     }
@@ -76,11 +121,14 @@ public class Data {
         this.burned = b;
         this.baseFee = f;
 
+        this.txCount = c.size();
+        this.mempoolSize = mempool.size();
+
         this.logs = l;
     }
 
     // Pool Data Style
-    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, double f, BigDecimal s, double gu, ArrayList<String[]> l) {
+    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, double f, BigDecimal s, double gu, BigDecimal pe, boolean tfpub, boolean tfpriv, BigDecimal br, BigDecimal bs, ArrayList<String[]> l) {
         this.mempool = m;
         this.confirmed = c;
 
@@ -88,6 +136,14 @@ public class Data {
         this.rewards = r;
         this.sharedPool = s;
         this.baseFee = f;
+
+        this.txCount = c.size();
+        this.mempoolSize = mempool.size();
+        this.poolEffect = pe;
+        this.takeFromPublic = tfpub;
+        this.takeFromPrivate = tfpriv;
+        this.blockReward = br;
+        this.blockSurplus = bs;
 
         this.logs = l;
     }
@@ -102,6 +158,9 @@ public class Data {
         this.rewards = r;
         this.burned = b;
         this.baseFee = f;
+
+        this.txCount = c.size();
+        this.mempoolSize = mempool.size();
 
         this.logs = l;
     }

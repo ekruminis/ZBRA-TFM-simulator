@@ -51,4 +51,8 @@ public class Miner {
     }
 
     public void updatePoolEffect(BigDecimal pe) { this.poolEffect = poolEffect.add(pe); }
+
+    public void setPoolEffect(BigDecimal pe) {
+        this.poolEffect = pe;
+    }
 }

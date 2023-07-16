@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit;
 
 public class Main {
     public static void main(String[] args) throws IOException {
-//        args = new String[]{"eip1559", "1008", "45", "20", "month-eip2mb4mb-45", "blocks.json"};
+        //args = new String[]{"pool", "1440", "89", "20", "pool-updated-week-89", "txs-week.json"};
 
         AbstractTFM tfm = switch (args[0]) {
             case "first_price" -> new FirstPrice();

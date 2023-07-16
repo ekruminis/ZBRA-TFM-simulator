@@ -113,7 +113,7 @@ public class Simulation {
             blockchain.get(0).setBaseFee(0.00000035); // TODO ***
             if (tfm.getType().equals("Reserve Pool")) {
                 // initialise reserve pool with 10 BTC at start
-                blockchain.get(0).updatePool(new BigDecimal("10")); // TODO ***
+                blockchain.get(0).updatePool(new BigDecimal("100")); // TODO ***
             }
         }
 
@@ -309,7 +309,7 @@ public class Simulation {
         IntStream.range(0, 5).forEach(i -> sumCW.writeRow("")); // create empty space in file, just for better readability
 
         // log miner summary data
-        sumCW.writeRow("Miner ID", "% of Stake Power", "Total Payout", "% of Total Network Payout", "Shared Pool Effect", "Private Pool");
+        sumCW.writeRow("Miner ID", "% of Stake Power", "Total Payout", "% of Total Network Payout", "Shared Pool Effect");
         DecimalFormat df = new DecimalFormat("#.####");
         df.setRoundingMode(RoundingMode.HALF_UP);
         BigDecimal tp = totalPayout;
@@ -320,8 +320,7 @@ public class Simulation {
                         String.valueOf((Double.parseDouble(df.format(((double) m.getStake() / totalStake))))),
                         String.valueOf(m.getRewards()),
                         String.valueOf(m.getRewards().divide(tp, 10, ROUND_HALF_EVEN)),
-                        String.valueOf(m.getPoolEffect()),
-                        String.valueOf(m.getPrivatePool())
+                        String.valueOf(m.getPoolEffect())
                 );
             }
             else {
@@ -339,7 +338,7 @@ public class Simulation {
         IntStream.range(0, 5).forEach(i -> sumCW.writeRow("")); // create empty space in file, just for better readability
 
         // log block summary data
-        sumCW.writeRow("Block Index", "Bytes Used", "% Of Max Block Size", "Miner ID", "Miner Rewards", "Total Burned", "Avg. fee", "Pool", "Base Fee");
+        sumCW.writeRow("Block Index", "Bytes Used", "% Of Max Block Size", "TX Count", "TX in Mempool", "Miner ID", "Miner Rewards", "Total Burned", "Avg. fee", "Base Fee", "Pool Amount", "Effect on Pool", "Taken From Private Pool", "Block Surplus", "Block Reward Bonus");
         for (int i = 1; i < blockchain.size(); i++) {
             BigDecimal b = new BigDecimal("0");
             try {
@@ -354,12 +353,18 @@ public class Simulation {
                     String.valueOf(blockchain.get(i).getIndex()),
                     String.valueOf(blockchain.get(i).getSize()),
                     String.valueOf((double) blockchain.get(i).getSize() / SIZE_LIMIT),
+                    String.valueOf(blockchain.get(i).getLogs().getTxCount()),
+                    String.valueOf(blockchain.get(i).getLogs().getMempoolSize()),
                     String.valueOf(blockchain.get(i).getMinerID()),
                     String.valueOf(blockchain.get(i).getRewards()),
                     String.valueOf(blockchain.get(i).getBurned()),
                     String.valueOf(b),
+                    String.valueOf((new BigDecimal(blockchain.get(i).getBaseFee()))),
                     String.valueOf(blockchain.get(i).getPool()),
-                    String.valueOf((new BigDecimal(blockchain.get(i).getBaseFee())))
+                    String.valueOf(blockchain.get(i).getLogs().getPoolEffect()),
+                    String.valueOf(blockchain.get(i).getLogs().isTakeFromPrivate()),
+                    String.valueOf(blockchain.get(i).getLogs().getBlockSurplus()),
+                    String.valueOf(blockchain.get(i).getLogs().getBlockReward())
                     );
         }
 
