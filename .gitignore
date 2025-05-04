@@ -1,0 +1,4 @@
+# Ignore input and output folders
+input/
+output/
+target/
