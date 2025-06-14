@@ -1,12 +1,12 @@
 package ZBRA.tfm;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+
 import ZBRA.blockchain.Block;
 import ZBRA.blockchain.Data;
 import ZBRA.blockchain.Miner;
 import ZBRA.blockchain.Transaction;
-
-import java.math.BigDecimal;
-import java.util.ArrayList;
 
 public class Burning2ndPrice extends AbstractTFM {
     private final static String type = "Burning 2nd Price Auction";
@@ -16,14 +16,15 @@ public class Burning2ndPrice extends AbstractTFM {
     }
 
     // used for logging each tx data
-    public String[] logStart(int i, String cc, String h, double o, double f, double g) {
+    public String[] logStart(int index, String confirmed, String hash, double feeOffered, double feePaid, double weight, double size) {
         return new String[] {
-                String.valueOf(i),
-                cc,
-                h,
-                String.valueOf(o),
-                String.valueOf(f),
-                String.valueOf(g)
+                String.valueOf(index),
+                confirmed,
+                hash,
+                String.valueOf(feeOffered),
+                String.valueOf(feePaid),
+                String.valueOf(weight),
+                String.valueOf(size)
         };
     }
 
@@ -36,8 +37,8 @@ public class Burning2ndPrice extends AbstractTFM {
                 "Current Hash",
                 "Miner ID",
                 "Block Reward",
-                "Size Limit",
                 "Block Size",
+                "Block Weight",
                 "Number of Confirmed TX",
                 "Number of Unconfirmed TX",
                 "Effective Fee",
@@ -47,95 +48,83 @@ public class Burning2ndPrice extends AbstractTFM {
                 "TX Hash",
                 "TX Offered",
                 "TX Paid",
+                "TX Weight",
                 "TX Size"
         };
     }
 
     // Main Burning Second-Price Mechanism Implementation
     @Override
-    public Data fetchValidTX(ArrayList<Transaction> m, double blockLimit, Block b, Miner miner, double target) {
-        // sort current mempool by highest fee per byte offered
-        m.sort((t1, t2) -> Double.compare(t2.getByte_fee(), t1.getByte_fee())); // t2.getGasPrice(), t1.getGasPrice()
+    public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, Block block, Miner miner, double weightTarget) {
+        // Sort mempool by fee per weight unit
+        mempool.sort((tx1, tx2) -> Double.compare(tx2.getWeightFee(), tx1.getWeightFee()));
 
-        double sizeUsedUp = 0; // total size used by current block
-        ArrayList<String[]> logs = new ArrayList<String[]>(); // log data for printing later
-        double effectiveFee = 0;  // fee per byte price to be paid by all included tx
-        BigDecimal userPay = new BigDecimal("0"); // total fees paid by confirmed users
+        double sizeUsedUp = 0;
+        double weightUsedUp = 0;
 
-        ArrayList<Transaction> txList = new ArrayList<Transaction>(); // list of included transactions
-        ArrayList<Transaction> confirmedTxList = new ArrayList<Transaction>(); // list of *confirmed* transactions
-        ArrayList<Transaction> unconfirmedTxList = new ArrayList<Transaction>(); // list of *unconfirmed* transactions
+        ArrayList<String[]> logs = new ArrayList<>();
+        BigDecimal totalUserPay = new BigDecimal("0");
+        BigDecimal minerRewards = new BigDecimal("0");
+        BigDecimal burned = new BigDecimal("0");
 
-        BigDecimal rewards = new BigDecimal("0"); // total rewards given to miner
-        BigDecimal burned = new BigDecimal("0"); // total burned
-
+        double effectiveFee = 0;
         int index = 1;
 
-        while(true) {
-            // if mempool is not empty..
-            if(!m.isEmpty()) {
-                // if block is not yet filled to capacity..
-                if ((sizeUsedUp + m.get(0).getSize()) < blockLimit) {
-                    // add to  tx list
-                    txList.add(m.get(0));
+        ArrayList<Transaction> txList = new ArrayList<>();
+        ArrayList<Transaction> confirmedTxList = new ArrayList<>();
+        ArrayList<Transaction> unconfirmedTxList = new ArrayList<>();
 
-                    sizeUsedUp += m.get(0).getSize();
+        while (!mempool.isEmpty()) {
+            Transaction tx = mempool.get(0);
+            double txWeight = tx.getWeight();
+            double txSize = tx.getSize();
 
-                    // remove from mempool and continue..
-                    m.remove(0);
-                }
-                // block is filled so split txlist in half, decide which tx get confirmed/unconfirmed, get miner payout..
-                else {
-                    txList.sort((t1, t2) -> Double.compare(t2.getTotal_fee(), t1.getTotal_fee()));
-                    int split = (int)(txList.size()/2);
-                    confirmedTxList = new ArrayList<Transaction>(txList.subList(0, split));
-                    unconfirmedTxList = new ArrayList<Transaction>(txList.subList(split, txList.size()));
-                    effectiveFee = unconfirmedTxList.get(0).getByte_fee();
-
-                    break;
-                }
+            // Skip transactions too large to ever fit
+            if (txWeight > weightLimit) {
+                mempool.remove(0);
+                continue;
             }
-            // no more tx in mempool so split txlist in half, decide which tx get confirmed/unconfirmed, get miner payout.
-            else {
 
-                txList.sort((t1, t2) -> Double.compare(t2.getTotal_fee(), t1.getTotal_fee()));
-                int split = (int)(txList.size()/2);
-                confirmedTxList = new ArrayList<Transaction>(txList.subList(0, split));
-                unconfirmedTxList = new ArrayList<Transaction>(txList.subList(split, txList.size()));
-                effectiveFee = unconfirmedTxList.get(0).getByte_fee();
-
+            // If adding this tx would exceed the block weight limit, stop
+            if ((weightUsedUp + txWeight) > weightLimit) {
                 break;
             }
+
+            // Add to temporary tx list
+            txList.add(tx);
+            sizeUsedUp += txSize;
+            weightUsedUp += txWeight;
+
+            mempool.remove(0);
         }
 
-        sizeUsedUp = 0; // reset size used, only count confirmed txs size
+        // Split tx list in half
+        txList.sort((t1, t2) -> Double.compare(t2.getWeightFee(), t1.getWeightFee()));
+        int split = txList.size() / 2;
+        confirmedTxList = new ArrayList<>(txList.subList(0, split));
+        unconfirmedTxList = new ArrayList<>(txList.subList(split, txList.size()));
 
-        // cycle through each *confirmed* tx and calculate user fees based on size * effective_fee, log data
-        for(Transaction t : confirmedTxList) {
-            userPay = userPay.add(BigDecimal.valueOf(t.getSize() * effectiveFee));
+        if (!unconfirmedTxList.isEmpty()) {
+            effectiveFee = unconfirmedTxList.get(0).getWeightFee();
+        }
 
-            // update parameters
-            sizeUsedUp += t.getSize();
+        for (Transaction t : confirmedTxList) {
+            double feePaid = t.getWeight() * effectiveFee;
+            totalUserPay = totalUserPay.add(BigDecimal.valueOf(feePaid));
 
-            // log data
-            logs.add(logStart(index, "YES", t.getHash(), t.getTotal_fee(), t.getSize() * effectiveFee, t.getSize()));
-
+            logs.add(logStart(index, "YES", t.getHash(), t.getTotalFee(), feePaid, t.getWeight(), t.getSize()));
             index++;
         }
 
-        // cycle through each *unconfirmed* tx and calculate miner payout
-        for(Transaction t : unconfirmedTxList) {
-            rewards = rewards.add(new BigDecimal(t.getTotal_fee()));
-            logs.add(logStart(index, "no", t.getHash(), t.getTotal_fee(), 0, t.getSize()));
-
+        for (Transaction t : unconfirmedTxList) {
+            minerRewards = minerRewards.add(new BigDecimal(t.getTotalFee()));
+            logs.add(logStart(index, "no", t.getHash(), t.getTotalFee(), 0, t.getWeight(), t.getSize()));
             index++;
         }
 
-        burned = userPay.subtract(rewards);
+        burned = totalUserPay.subtract(minerRewards);
+        mempool.addAll(unconfirmedTxList);
 
-        // send unconfirmed txs back into mempool
-        m.addAll(unconfirmedTxList);
-
-        return new Data(m, confirmedTxList, unconfirmedTxList, rewards, effectiveFee, burned, sizeUsedUp, logs);
+        return new Data(mempool, confirmedTxList, unconfirmedTxList, minerRewards, effectiveFee, burned, sizeUsedUp, weightUsedUp, logs);
     }
 }

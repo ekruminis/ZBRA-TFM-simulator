@@ -5,56 +5,61 @@ import java.util.ArrayList;
 
 public class Block {
     int index;
-    int miner_id;
-    String parent_hash;
-    String current_hash;
-    double size_limit;
-    double size;
-    double base_fee;
-    long tx_number; // number of transactions inside the block
+    int minerId;
+    String parentHash;
+    String currentHash;
+    double weightLimit; // size limit in weight units;
+    double size; // size in bytes
+    double weight; // weight in weight units
+    double baseFee;
+    long txNumber; // number of transactions inside the block
     BigDecimal rewards; // total rewards paid directly to miner
     BigDecimal burned; // total amount burned
     BigDecimal pool; // total of current pool
     Data logs;
 
-    ArrayList<Transaction> confirmed_txs;
-    ArrayList<Transaction> unconfirmed_txs;
+    ArrayList<Transaction> confirmedTxs;
+    ArrayList<Transaction> unconfirmedTxs;
 
     // GENESIS block
     public Block() {
         this.index = 0;
-        this.miner_id = -1;
-        this.parent_hash = null;
-        this.current_hash = "GENESIS";
-        this.size_limit = -1.0;
+        this.minerId = -1;
+        this.parentHash = null;
+        this.currentHash = "GENESIS";
+        this.weightLimit = -1.0;
         this.size = -1.0;
-        this.base_fee = -1.0;
+        this.weight = -1.0;
+        this.baseFee = -1.0;
         this.rewards = null;
-        this.confirmed_txs = null;
-        this.unconfirmed_txs = null;
-        this.tx_number = -1;
+        this.confirmedTxs = null;
+        this.unconfirmedTxs = null;
+        this.txNumber = -1;
         this.burned = null;
         this.pool = null;
         this.logs = null;
     }
 
     // general block
-    public Block(int index, int miner_id, String parent_hash, String current_hash, double limit, Data d) {
+    public Block(int index, int minerId, String parentHash, String currentHash, double limit, Data d) {
         this.index = index;
-        this.miner_id = miner_id;
-        this.parent_hash = parent_hash;
-        this.current_hash = current_hash;
-        this.size_limit = limit;
+        this.minerId = minerId;
+        this.parentHash = parentHash;
+        this.currentHash = currentHash;
 
-        this.size = d.getSize();
-        this.base_fee = d.getBaseFee();
+        this.weightLimit = limit;
+        this.size = d.getSize(); // size in bytes
+        this.weight = d.getWeight(); // size in weight units
+        this.baseFee = d.getBaseFee();
+
         this.rewards = d.getRewards();
-        this.confirmed_txs = d.getConfirmed();
-        this.unconfirmed_txs = d.getUnconfirmed();
-        this.tx_number = (d.getConfirmed() != null ? d.getConfirmed().size() : 0) +
-                         (d.getUnconfirmed() != null ? d.getUnconfirmed().size() : 0);
+        this.confirmedTxs = d.getConfirmed();
+        this.unconfirmedTxs = d.getUnconfirmed();
+        this.txNumber = (d.getConfirmed() != null ? d.getConfirmed().size() : 0) + 
+                            (d.getUnconfirmed() != null ? d.getUnconfirmed().size() : 0);
         this.burned = d.getBurned();
         this.pool = d.getPool();
+
         this.logs = d;
     }
 
@@ -65,19 +70,19 @@ public class Block {
     }
 
     public int getMinerID() {
-        return miner_id;
+        return minerId;
     }
 
     public String getParentHash() {
-        return parent_hash;
+        return parentHash;
     }
 
     public String getCurrentHash() {
-        return current_hash;
+        return currentHash;
     }
 
-    public double getSizeLimit() {
-        return size_limit;
+    public double getWeightLimit() {
+        return weightLimit;
     }
 
     public double getSize() {
@@ -85,21 +90,21 @@ public class Block {
     }
 
     public double getBaseFee() {
-        return base_fee;
+        return baseFee;
     }
 
     public BigDecimal getRewards() { return rewards; }
 
     public ArrayList<Transaction> getConfirmedTXs() {
-        return confirmed_txs;
+        return confirmedTxs;
     }
 
     public ArrayList<Transaction> getUnconfirmedTXs() {
-        return unconfirmed_txs;
+        return unconfirmedTxs;
     }
 
     public long getTXNumber() {
-        return tx_number;
+        return txNumber;
     }
 
     public BigDecimal getBurned() {
@@ -107,7 +112,7 @@ public class Block {
     }
 
     public void setBaseFee(double bf) {
-        this.base_fee = bf;
+        this.baseFee = bf;
     }
 
     public void updatePool(BigDecimal s) {
@@ -116,6 +121,26 @@ public class Block {
 
     public Data getLogs() {
         return logs;
+    }
+
+    public int getMinerId() {
+        return minerId;
+    }
+
+    public double getWeight() {
+        return weight;
+    }
+
+    public long getTxNumber() {
+        return txNumber;
+    }
+
+    public ArrayList<Transaction> getConfirmedTxs() {
+        return confirmedTxs;
+    }
+
+    public ArrayList<Transaction> getUnconfirmedTxs() {
+        return unconfirmedTxs;
     }
 }
 

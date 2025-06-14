@@ -6,8 +6,8 @@ public class Miner {
     int stake;
     int nodeID;
     BigDecimal winnings; // total rewards earned by miner
-    BigDecimal privatePool; // totals of private pool (for 'pool' TFM)
-    BigDecimal poolEffect; // positive/negative change on shared pool
+    BigDecimal privatePool; // miners individual total in private pool (for 'pool' TFM)
+    BigDecimal publicPoolEffect; // positive/negative change on shared pool
     // double malice;
 
     public Miner(int id, int s) {
@@ -15,15 +15,15 @@ public class Miner {
         this.stake = s;
         this.winnings = new BigDecimal("0");
         this.privatePool = new BigDecimal("0");
-        this.poolEffect = new BigDecimal("0");
+        this.publicPoolEffect = new BigDecimal("0");
     }
 
-    public Miner(int id, int s, BigDecimal pp, BigDecimal cp) {
+    public Miner(int id, int s, BigDecimal pp, BigDecimal ppe) {
         this.nodeID = id;
         this.stake = s;
         this.winnings = new BigDecimal("0");
         this.privatePool = pp;
-        this.poolEffect = cp;
+        this.publicPoolEffect = ppe;
     }
 
     public int getStake() {
@@ -46,13 +46,12 @@ public class Miner {
         return privatePool;
     }
 
-    public BigDecimal getPoolEffect() {
-        return poolEffect;
+    public BigDecimal getPublicPoolEffect() {
+        return publicPoolEffect;
     }
 
-    public void updatePoolEffect(BigDecimal pe) { this.poolEffect = poolEffect.add(pe); }
+    public void updatePublicPoolEffect(BigDecimal ppe) { this.publicPoolEffect = publicPoolEffect.add(ppe); }
 
-    public void setPoolEffect(BigDecimal pe) {
-        this.poolEffect = pe;
-    }
+    public void updatePrivatePool(BigDecimal pp) { this.privatePool = privatePool.add(pp); }
+
 }

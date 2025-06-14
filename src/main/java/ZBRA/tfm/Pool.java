@@ -1,34 +1,38 @@
 package ZBRA.tfm;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+
 import ZBRA.blockchain.Block;
 import ZBRA.blockchain.Data;
 import ZBRA.blockchain.Miner;
 import ZBRA.blockchain.Transaction;
 
-import java.math.BigDecimal;
-import java.util.ArrayList;
-
 public class Pool extends AbstractTFM {
     private final static String type = "Reserve Pool";
-    private double maxSharedTake = 0.66; // percentage of how much of the payout can be taken away from shared pool
-    private double blockRewardPercentage = 1.0; // percentage of how much of the current block payout they can take extra for a block reward
+    private double maxSharedTake = 0.66; // percentage of how much of the total payout can be taken away from shared pool
+    private double blockRewardPercentage = 1.0; // percentage of the current block payout they can take extra for a block reward
 
     public Pool() {
         super(type);
     }
 
-    public Pool(double mst) {
+    public Pool(double maxSharedTake) {
         super(type);
-        this.maxSharedTake = mst;
+        this.maxSharedTake = maxSharedTake;
     }
 
 
     // used for logging each tx data
-    public String[] logStart(int i, String h, double f) {
+    public String[] logStart(int index, String hash, double feeTotal, double feeBase, double feeTip, double weight, double size) {
         return new String[] {
-                String.valueOf(i),
-                h,
-                String.valueOf(f),
+                String.valueOf(index),
+                hash,
+                String.valueOf(feeTotal),
+                String.valueOf(feeBase),
+                String.valueOf(feeTip),
+                String.valueOf(weight),
+                String.valueOf(size)
         };
     }
 
@@ -40,161 +44,197 @@ public class Pool extends AbstractTFM {
                 "Parent Hash",
                 "Current Hash",
                 "Miner ID",
-                "Block Reward",
-                "Size Limit",
+                "Miner Rewards",
+                "Block Reward (total)",
+                "Block Reward in Base Fees",
+                "Block Reward in Tips",
                 "Block Size",
+                "Block Weight",
                 "Number of TX",
                 "Base Fee",
-                "Reserve Pool",
+                "Reserve Pool Balance",
+                "Pool Contribution",
                 "TX Index",
                 "TX Hash",
-                "TX Paid"
+                "TX Paid",
+                "TX Base Fee",
+                "TX Tip",
+                "TX Weight",
+                "TX Size"
         };
     }
 
     // Main EIP-1559 Mechanism Implementation
     @Override
-    public Data fetchValidTX(ArrayList<Transaction> m, double blockLimit, Block b, Miner miner, double target) {
-        // sort current mempool by highest fee per byte price offered
-        m.sort((t1, t2) -> Double.compare(t2.getByte_fee(), t1.getByte_fee()));
+    public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, Block block, Miner miner, double weightTarget) {
+        // Sort mempool by highest fee per byte
+        mempool.sort((tx1, tx2) -> Double.compare(tx2.getWeightFee(), tx1.getWeightFee()));
 
-        double sizeUsedUp = 0; // total bytes used by current block
-        ArrayList<String[]> logs = new ArrayList<String[]>(); // log data for printing later
-        ArrayList<Transaction> txList = new ArrayList<Transaction>(); // list of *confirmed* transactions
-        BigDecimal rewards = new BigDecimal("0"); // total rewards given to miner
-        BigDecimal pool = b.getPool(); // get current pool reserves level
-        BigDecimal poolContribution = new BigDecimal("0");
-        boolean takenPublic = false;
-        boolean takenPrivate = false;
-        BigDecimal blockReward = new BigDecimal("0");
-        BigDecimal blockSurplus = null;
+        double sizeUsedUp = 0;
+        double weightUsedUp = 0;
 
-        // calculate base fee for this current block (max of 12.5% update in a single cycle)
-        double baseFee = (b.getBaseFee()*(1.0+0.125*((b.getSize()-target)/target)));
+        ArrayList<String[]> logs = new ArrayList<>();
 
-        blockSurplus = new BigDecimal(baseFee * 500 * 4200 * 6 * 24 * 7);
+        ArrayList<Transaction> txList = new ArrayList<>();
+
+        BigDecimal currentPoolBalance = block.getPool();
+
+        BigDecimal minerRewards = new BigDecimal("0");
+        BigDecimal blockFeeTotal = new BigDecimal("0");
+        BigDecimal blockTipTotal = new BigDecimal("0");
+
+        BigDecimal blockPoolContribution = new BigDecimal("0");
+        boolean minerTakenPublic = false;
+        boolean minerTakenPrivate = false;
+
+        // Calculate base fee of this block
+        double baseFee = block.getBaseFee() * (1.0 + 0.125 * ((block.getWeight() - weightTarget) / weightTarget));
+        //BigDecimal blockSurplus = new BigDecimal(baseFee * weightTarget * 6 * 24 * 7);
 
         int index = 1;
 
-        while(true) {
-            // if mempool is not empty..
-            if(!m.isEmpty()) {
-                // if block is not yet filled to capacity..
-                if ((sizeUsedUp + m.get(0).getSize()) < blockLimit) {
-                    // if current mempool tx is capable of paying base fee..
-                    if(m.get(0).getByte_fee() >= baseFee) {
-                        // add to *confirmed* tx list
-                        txList.add(m.get(0));
+        while (!mempool.isEmpty()) {
+            Transaction tx = mempool.get(0);
+            double txSize = tx.getSize();
+            double txWeight = tx.getWeight();
 
-                        // update parameters
-                        BigDecimal val = new BigDecimal(m.get(0).getTotal_fee());
-                        rewards = rewards.add(val);
-                        sizeUsedUp += m.get(0).getSize();
-
-                        // log data
-                        logs.add(logStart(index, m.get(0).getHash(), m.get(0).getTotal_fee()));
-
-                        // remove from mempool and continue..
-                        m.remove(0);
-                        index++;
-                    }
-                    // mempool tx are sorted so as soon as one TX can't afford to pay base fee, we can leave
-                    else {
-                        break;
-                    }
-                }
-                else {
-                    break;
-                }
+            // Skip transactions that are too large to ever fit
+            if (txWeight > weightLimit) {
+                mempool.remove(0);
+                continue;
             }
-            else {
+
+            // Stop if this transaction would exceed the block limit
+            if ((weightUsedUp + txWeight) > weightLimit) {
                 break;
             }
+
+            // Stop if transaction can't afford the base fee (mempool is sorted)
+            if (tx.getWeightFee() < baseFee) {
+                break;
+            }
+
+            // Confirm transaction
+            txList.add(tx);
+            BigDecimal txTotalFee = new BigDecimal(tx.getTotalFee());
+            BigDecimal txBaseFee = new BigDecimal(baseFee * txWeight);
+            BigDecimal txTip = txTotalFee.subtract(txBaseFee);
+
+            blockFeeTotal = blockFeeTotal.add(txTotalFee);
+            minerRewards = minerRewards.add(txBaseFee);
+
+            sizeUsedUp += txSize;
+            weightUsedUp += txWeight;
+
+            logs.add(logStart(index, tx.getHash(), tx.getTotalFee(), txBaseFee.doubleValue(), txTip.doubleValue(), txWeight, txSize));
+            mempool.remove(0);
+            index++;
         }
 
-        // calculate optimal payout for the block, and how much of it can be taken from the shared pool
-        BigDecimal optimalPayout = new BigDecimal(baseFee * target);
-        BigDecimal difference = rewards.subtract(optimalPayout);
+        blockTipTotal = blockFeeTotal.subtract(minerRewards);
+        // Determine optimal payout
+        BigDecimal optimalPayout = new BigDecimal(baseFee * weightTarget);
+        BigDecimal difference = minerRewards.subtract(optimalPayout);
+        BigDecimal maxPublicTakeout = optimalPayout.multiply(BigDecimal.valueOf(maxSharedTake)); // percentage of optimal payout
 
-        BigDecimal maxPublicTakeout = optimalPayout.multiply(BigDecimal.valueOf(maxSharedTake));
+        currentPoolBalance = currentPoolBalance.add(blockTipTotal); // add tips to pool
+        miner.updatePublicPoolEffect(blockTipTotal);
+        blockPoolContribution = blockPoolContribution.add(blockTipTotal);
 
-        // if pool is not empty, and we have a shortage in payout
-        if(pool.signum() == 1 && difference.signum() == -1) {
-            // if pool has enough in resources..
-            if(pool.compareTo(difference) >= 0) {
-                difference = difference.negate();
+        // If there's a deficit in payout, and the pool has some funds
+        if (currentPoolBalance.signum() == 1 && difference.signum() == -1) {
+            difference = difference.negate(); // Make deficit positive
 
-                //if difference is greater than max possible takeout, then take what's possible
-                if(difference.compareTo(maxPublicTakeout) >= 0) {
-                    // if miner positively contributed to pool in the past, let them take extra if possible
-                    if(miner.getPoolEffect().signum() == 1) {
-                        // if possible take full 100%
-                        if(miner.getPoolEffect().compareTo(difference) >= 0) {
-                            pool = pool.subtract(difference.negate());
-                            miner.updatePoolEffect(difference.negate());
-                            poolContribution = difference.negate();
-                            takenPublic = true;
-                            takenPrivate = true;
-                            rewards = optimalPayout;
-                        }
-                        else {
-                            miner.updatePoolEffect(maxPublicTakeout.negate());
-                            // if still can take something from personal pool
-                            if(miner.getPoolEffect().signum() == 1) {
-                                BigDecimal takeout = maxPublicTakeout.add(miner.getPoolEffect());
-                                miner.setPoolEffect(new BigDecimal("0"));
-                                rewards = rewards.add(takeout);
-                                pool = pool.subtract(takeout);
-                                poolContribution = takeout.negate();
-                                takenPublic = true;
-                                takenPrivate = true;
+            // If miner has contributed positively to the pool in the past
+            if (miner.getPublicPoolEffect().signum() == 1) {
+
+                // If miner's past contribution fully covers the deficit
+                if (miner.getPublicPoolEffect().compareTo(difference) >= 0) {
+                    // Take as needed
+                    currentPoolBalance = currentPoolBalance.subtract(difference);
+                    miner.updatePublicPoolEffect(miner.getPublicPoolEffect().add(difference.negate()).max(BigDecimal.ZERO));
+                    blockPoolContribution = blockPoolContribution.add(difference.negate());
+                    minerTakenPublic = true;
+                    minerRewards = minerRewards.add(difference);
+                }
+
+                // Else miner's contribution is not enough to fully cover the deficit
+                else {
+                    if (difference.compareTo(maxPublicTakeout) >= 0) {
+                        // Deficit is greater than max public takeout
+
+                        // Reduce public pool effect by maxTakeout (clamped at 0)
+                        miner.updatePublicPoolEffect(miner.getPublicPoolEffect().subtract(maxPublicTakeout).max(BigDecimal.ZERO));
+
+                        // Take maxTakeout from pool
+                        currentPoolBalance = currentPoolBalance.subtract(maxPublicTakeout);
+                        blockPoolContribution = blockPoolContribution.subtract(maxPublicTakeout);
+                        minerRewards = minerRewards.add(maxPublicTakeout);
+                        minerTakenPublic = true;
+
+                        difference = difference.subtract(maxPublicTakeout);
+
+                        // if needed, and can still take some more from miners' own previous contributions
+                        if (miner.getPublicPoolEffect().signum() == 1 && difference.signum() == 1) {
+                            if(miner.getPublicPoolEffect().compareTo(difference) >= 0) {
+                                miner.updatePublicPoolEffect(miner.getPublicPoolEffect().subtract(difference).max(BigDecimal.ZERO));
+                                currentPoolBalance = currentPoolBalance.subtract(difference);
+                                blockPoolContribution = blockPoolContribution.subtract(difference);
+                                minerTakenPublic = true;
+                                minerRewards = minerRewards.add(difference);
                             }
-                            // just take max possible takeout
                             else {
-                                miner.updatePoolEffect(maxPublicTakeout.negate());
-                                rewards = rewards.add(maxPublicTakeout);
-                                pool = pool.subtract(maxPublicTakeout);
-                                poolContribution = maxPublicTakeout.negate();
-                                takenPublic = true;
+                                // take whatever is possible from miner's previous contributions
+                                currentPoolBalance = currentPoolBalance.subtract(miner.getPublicPoolEffect());
+                                minerRewards = minerRewards.add(miner.getPublicPoolEffect());
+                                blockPoolContribution = blockPoolContribution.subtract(miner.getPublicPoolEffect());
+                                minerTakenPublic = true;
+                                miner.updatePublicPoolEffect(BigDecimal.ZERO);
                             }
                         }
-
+                    } else {
+                        // Deficit is less than maxTakeout — just take what's needed
+                        currentPoolBalance = currentPoolBalance.subtract(difference);
+                        minerRewards = minerRewards.add(difference);
+                        miner.updatePublicPoolEffect(miner.getPublicPoolEffect().subtract(difference).max(BigDecimal.ZERO));
+                        blockPoolContribution = blockPoolContribution.subtract(difference);
+                        minerTakenPublic = true;
                     }
                 }
-                // take whatever is needed from the pool
-                else {
-                    pool = pool.subtract(difference);
-                    rewards = rewards.add(difference);
-                    miner.setPoolEffect(difference.negate());
-                    poolContribution = difference.negate();
-                    takenPublic = true;
+            }
+
+            // If miner has NOT contributed positively to the pool
+            else {
+                // Miner can take up to maxTakeout
+                if (currentPoolBalance.compareTo(maxPublicTakeout) >= 0) {
+                    minerRewards = minerRewards.add(maxPublicTakeout);
+                    currentPoolBalance = currentPoolBalance.subtract(maxPublicTakeout);
+                    miner.updatePublicPoolEffect(miner.getPublicPoolEffect().add(maxPublicTakeout.negate()).max(BigDecimal.ZERO));
+                    blockPoolContribution.add(maxPublicTakeout.negate());
+                    minerTakenPublic = true;
+                } else {
+                    // Pool is less than maxTakeout, take whatever is there
+                    minerRewards = minerRewards.add(currentPoolBalance);
+                    miner.updatePublicPoolEffect(miner.getPublicPoolEffect().add(currentPoolBalance.negate()).max(BigDecimal.ZERO));
+                    blockPoolContribution = blockPoolContribution.add(currentPoolBalance.negate());
+                    minerTakenPublic = true;
+                    currentPoolBalance = BigDecimal.ZERO;
                 }
-
-            }
-            // if pool doesn't have enough to pay off fully
-            else if(pool.compareTo(maxPublicTakeout) < 0) {
-                rewards.add(pool);
-                miner.updatePoolEffect(pool.negate());
-                poolContribution = pool.negate();
-                takenPublic = true;
-                pool = new BigDecimal("0");
-            }
-        }
-        // if block contains a surplus in fees
-        else if(difference.signum() == 1) {
-            rewards = optimalPayout;
-            pool = pool.add(difference);
-            miner.updatePoolEffect(difference);
-            poolContribution = difference;
-
-            // take 5% of reserve pool
-            if(pool.compareTo(blockSurplus) >= 0) {
-                blockReward = rewards.multiply(new BigDecimal(blockRewardPercentage));
-                rewards = rewards.add(blockReward);
-                pool.add(blockReward.negate());
             }
         }
 
-        return new Data(m, txList, rewards, baseFee, pool, sizeUsedUp, poolContribution, takenPublic, takenPrivate, blockReward, blockSurplus, logs);
+        // If there's a surplus from base fees (difference is positive)
+        else if (difference.signum() == 1) {
+            minerRewards = optimalPayout;
+            currentPoolBalance = currentPoolBalance.add(difference);
+            miner.updatePublicPoolEffect(difference);
+            blockPoolContribution = blockPoolContribution.add(difference);
+        }
+
+        return new Data(
+                    mempool, txList, minerRewards, baseFee, 
+                    currentPoolBalance, sizeUsedUp, weightUsedUp, 
+                    blockPoolContribution, minerTakenPublic, minerTakenPrivate, 
+                    blockFeeTotal, blockTipTotal, logs);
     }
 }

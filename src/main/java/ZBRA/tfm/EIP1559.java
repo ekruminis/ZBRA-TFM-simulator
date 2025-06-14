@@ -1,12 +1,12 @@
 package ZBRA.tfm;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+
 import ZBRA.blockchain.Block;
 import ZBRA.blockchain.Data;
 import ZBRA.blockchain.Miner;
 import ZBRA.blockchain.Transaction;
-
-import java.math.BigDecimal;
-import java.util.ArrayList;
 
 public class EIP1559 extends AbstractTFM {
     private final static String type = "EIP-1559";
@@ -16,13 +16,13 @@ public class EIP1559 extends AbstractTFM {
     }
 
     // used for logging each tx data
-    public String[] logStart(int i, String h, double f, BigDecimal b, BigDecimal t) {
+    public String[] logStart(int index, String hash, double feePaid, BigDecimal feeBurned, BigDecimal feeTip) {
         return new String[] {
-                String.valueOf(i),
-                h,
-                String.valueOf(f),
-                String.valueOf(b),
-                String.valueOf(t)
+                String.valueOf(index),
+                hash,
+                String.valueOf(feePaid),
+                String.valueOf(feeBurned),
+                String.valueOf(feeTip)
         };
     }
 
@@ -35,8 +35,8 @@ public class EIP1559 extends AbstractTFM {
                 "Current Hash",
                 "Miner ID",
                 "Block Reward",
-                "Size Limit",
                 "Block Size",
+                "Block Weight",
                 "Number of TX",
                 "Base Fee",
                 "Fees Burned",
@@ -44,65 +44,72 @@ public class EIP1559 extends AbstractTFM {
                 "TX Hash",
                 "TX Paid",
                 "TX Burned",
-                "TX Tip"
+                "TX Tip",
+                "TX Weight",
+                "TX Size"
         };
     }
 
-    // Main EIP-1559 Mechanism Implementation
     @Override
-    public Data fetchValidTX(ArrayList<Transaction> m, double blockLimit, Block b, Miner miner, double target) {
-        // sort current mempool by highest fee per byte price offered
-        m.sort((t1, t2) -> Double.compare(t2.getByte_fee(), t1.getByte_fee()));
+    public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, Block block, Miner miner, double weightTarget) {
+        // Sort mempool by highest fee per byte
+        mempool.sort((tx1, tx2) -> Double.compare(tx2.getWeightFee(), tx1.getWeightFee()));
 
-        double sizeUsedUp = 0; // total bytes used by current block
-        ArrayList<String[]> logs = new ArrayList<String[]>(); // log data for printing later
-        ArrayList<Transaction> txList = new ArrayList<Transaction>(); // list of *confirmed* transactions
-        BigDecimal rewards = new BigDecimal("0"); // total rewards given to miner
-        BigDecimal burned = new BigDecimal("0"); // total burned
+        double sizeUsedUp = 0;
+        double weightUsedUp = 0;
 
-        // calculate base fee for this current block (max of 12.5% update in a single cycle)
-        double baseFee = (b.getBaseFee()*(1.0+0.125*((b.getSize()-target)/target)));
+        ArrayList<String[]> logs = new ArrayList<>();
+        BigDecimal totalUserPay = new BigDecimal("0");
+        BigDecimal minerRewards = new BigDecimal("0");
+        BigDecimal burned = new BigDecimal("0");
 
         int index = 1;
 
-        while(true) {
-            // if mempool is not empty..
-            if(!m.isEmpty()) {
-                // if block is not yet filled to capacity..
-                if ((sizeUsedUp + m.get(0).getSize()) < blockLimit) {
-                    // if current mempool tx is capable of paying base fee..
-                    if(m.get(0).getByte_fee() >= baseFee) {
-                        // add to *confirmed* tx list
-                        txList.add(m.get(0));
+        ArrayList<Transaction> txList = new ArrayList<>();
+        ArrayList<Transaction> confirmedTxList = new ArrayList<>();
+        ArrayList<Transaction> unconfirmedTxList = new ArrayList<>();
 
-                        // update parameters
-                        sizeUsedUp += m.get(0).getSize();
-                        BigDecimal burn = new BigDecimal(baseFee * m.get(0).getSize());
-                        burned = burned.add(burn);
-                        BigDecimal val = new BigDecimal( m.get(0).getTotal_fee()).subtract(burn);
-                        rewards = rewards.add(val);
+        // Calculate base fee for this block (max 12.5% adjustment)
+        double baseFee = block.getBaseFee() * (1.0 + 0.125 * ((block.getWeight() - weightTarget) / weightTarget));
 
-                        // log data
-                        logs.add(logStart(index, m.get(0).getHash(), m.get(0).getTotal_fee(), burn, val));
+        while (!mempool.isEmpty()) {
+            Transaction tx = mempool.get(0);
+            double txWeight = tx.getWeight();
+            double txSize = tx.getSize();
 
-                        // remove from mempool and continue..
-                        m.remove(0);
-                        index++;
-                    }
-                    // mempool tx are sorted so as soon as one TX can't afford to pay base fee, we can leave
-                    else {
-                        break;
-                    }
-                }
-                else {
-                    break;
-                }
+            // Skip transactions too large to ever fit
+            if (txSize > weightLimit) {
+                mempool.remove(0);
+                continue;
             }
-            else {
+
+            // Stop if this transaction would exceed the block size limit
+            if ((weightUsedUp + txWeight) > weightLimit) {
                 break;
             }
+
+            // Stop if the transaction can't pay the base fee (mempool is sorted by fee)
+            if (tx.getWeightFee() < baseFee) {
+                break;
+            }
+
+            // Confirm transaction
+            txList.add(tx);
+            sizeUsedUp += txSize;
+            weightUsedUp += txWeight;
+
+            BigDecimal feeBurned = BigDecimal.valueOf(baseFee * txWeight);
+            burned = burned.add(feeBurned);
+
+            BigDecimal feeTip = BigDecimal.valueOf(tx.getTotalFee()).subtract(feeBurned);
+            minerRewards = minerRewards.add(feeTip);
+
+            logs.add(logStart(index, tx.getHash(), tx.getTotalFee(), feeBurned, feeTip));
+
+            mempool.remove(0);
+            index++;
         }
 
-        return new Data(m, txList, rewards, burned, baseFee, sizeUsedUp, logs);
+        return new Data(mempool, txList, minerRewards, burned, baseFee, sizeUsedUp, weightUsedUp, logs);
     }
 }

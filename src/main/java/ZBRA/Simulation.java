@@ -1,13 +1,5 @@
 package ZBRA;
 
-import com.google.gson.*;
-import de.siegmar.fastcsv.writer.CsvWriter;
-import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.math3.distribution.PoissonDistribution;
-import ZBRA.blockchain.*;
-import ZBRA.tfm.AbstractTFM;
-
 import java.io.FileReader;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -18,19 +10,42 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.text.DecimalFormat;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.Objects;
+import java.util.Random;
 import java.util.stream.IntStream;
+
+import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.math3.distribution.GammaDistribution;
+import org.apache.commons.math3.distribution.PoissonDistribution;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
+
+import ZBRA.blockchain.Block;
+import ZBRA.blockchain.Data;
+import ZBRA.blockchain.Miner;
+import ZBRA.blockchain.Transaction;
+import ZBRA.tfm.AbstractTFM;
+import de.siegmar.fastcsv.writer.CsvWriter;
 
 public class Simulation {
     Path mainPath; // path to main simulation log file
     Path sumPath; // path to summary of the simulation log file
     Path inputPath; // path to the input dataset
     AbstractTFM tfm;
-    int time;
+    int cycles;
     CsvWriter mainCW; // csv writer for main log file
     CsvWriter sumCW; // csv write for summary log file
-    Random r1; // random generator for number of tx to fetch
-    Random r2; // random generator for which tx from dataset to take
+    Random randomSeed1; // random generator for number of tx to fetch
+    Random randomSeed2; // random generator for which tx from dataset to take
     Iterator<Transaction> iter;
 
     ArrayList<Transaction> data = new ArrayList<Transaction>(); // dataset containing all transactions from input file
@@ -41,11 +56,21 @@ public class Simulation {
     BigDecimal totalPayout = new BigDecimal("0"); // total payout awarded to all miners (summary logging)
     ArrayList<Block> blockchain = new ArrayList<Block>(); // arraylist of all blocks
 
-    final long SIZE_LIMIT = 2_000_000;
-    final long TARGET = 1_000_000;
+    // SIMULATION PARAMETERS
+    final long SIZE_LIMIT = 4_000_000;  // size limit of a block
+    final long TARGET = 2_000_000; // target size of the block
+    final double MEAN_TX_ARRIVAL_RATE = 2_471.0; // mean tx arrival rate for Gamma-Poisson distribution
+    final double ALPHA = 0.03; // shape parameter for Gamma distribution variance (increase this for more variance)
+    final double BASE_FEE = 0.0000002333;  // base fee for EIP-1559 and Reserve Pool TFM types
+    final double RESERVE_POOL_BASE = 134.38; // reserve pool base amount
+    final long MEMPOOL_INITIAL_SIZE = 93_824; // initial size of the mempool
 
     // print out headers depending on tfm + read input file and load all tx to dataset
     public void jsonStart() throws IOException {
+        BigDecimal byteFeeTotal = new BigDecimal(0);
+
+        BigDecimal weightFeeTotal = new BigDecimal(0);
+
         mainCW.writeComment(Arrays.toString(tfm.logHeaders()));
         try (FileReader fReader = new FileReader(inputPath.toFile())) {
             JsonElement rootElement = JsonParser.parseReader(fReader);
@@ -57,14 +82,22 @@ public class Simulation {
                         Transaction t = new Transaction(
                             jsonElement.getAsJsonObject().get("hash").getAsString(),
                             jsonElement.getAsJsonObject().get("size").getAsDouble(),
+                            jsonElement.getAsJsonObject().get("weight").getAsDouble(),
                             jsonElement.getAsJsonObject().get("fee").getAsDouble()
                         );
                         data.add(t);
+
+                        byteFeeTotal = byteFeeTotal.add(BigDecimal.valueOf(t.getByteFee()));
+                        weightFeeTotal = weightFeeTotal.add(BigDecimal.valueOf(t.getWeightFee()));
                     }
                 }
             }
-            System.out.println("dataset size: " + data.size());
-            Collections.shuffle(data, r2);
+            // print size of the dataset
+            System.out.println("Dataset size: " + data.size() + " txs");
+            System.out.println("byteFee total: " + byteFeeTotal + " \t\tavg fee per byte: " + byteFeeTotal.divide(BigDecimal.valueOf(data.size()), 10, RoundingMode.HALF_EVEN));
+            System.out.println("weightFee total: " + weightFeeTotal + " \t\tavg fee per weight: " + weightFeeTotal.divide(BigDecimal.valueOf(data.size()), 10, RoundingMode.HALF_EVEN));
+
+            Collections.shuffle(data, randomSeed2);
             iter = data.stream().iterator();
         } catch (IOException e) {
             System.err.println("Error reading input file: " + e.getMessage());
@@ -72,50 +105,59 @@ public class Simulation {
         }
     }
 
-    // add random number of txs to the mempool, draw randomly from complete dataset
-    public void fetchTX() {
+    // add random number of txs to the mempool, draw randomly from complete dataset, Gamma-Poisson (negative binomial) distribution
+    public int fetchTX() {
         try {
-            PoissonDistribution p = new PoissonDistribution(4000);
-            int y = (int) (p.sample() * r1.nextDouble(2));
+            double shape = 1.0 / ALPHA;
+            double scale = MEAN_TX_ARRIVAL_RATE * ALPHA;
+
+            GammaDistribution gamma = new GammaDistribution(shape, scale);
+            double lambda = gamma.sample(); // λ varies from cycle to cycle
+
+            PoissonDistribution poisson = new PoissonDistribution(lambda);
+            int y = poisson.sample(); // Final TX count
+
             int x = 0;
             while (iter.hasNext() && x < y) {
                 mempool.add(iter.next());
                 x++;
             }
+            return y;
         } catch (Exception e) {
             System.err.println("Error in fetchTX: " + e.getMessage());
+            return -1;
         }
     }
 
     // main simulation method
     public void simulate() throws IOException {
-        int cycles = time;
-
+        int cycles = this.cycles;
         jsonStart();
 
         blockchain.add(new Block()); // create *GENESIS* block
 
         if (tfm.getType().equals("EIP-1559") || tfm.getType().equals("Reserve Pool")) {
             // set base fee to what it was on 2022-10-09 (dataset)
-            blockchain.get(0).setBaseFee(0.00000035); // TODO ***
+            blockchain.get(0).setBaseFee(BASE_FEE); // TODO ***
             if (tfm.getType().equals("Reserve Pool")) {
-                // initialise reserve pool with 10 BTC at start
-                blockchain.get(0).updatePool(new BigDecimal("100")); // TODO ***
+                // initialise reserve pool with BTC at start
+                blockchain.get(0).updatePool(new BigDecimal(RESERVE_POOL_BASE)); // TODO ***
             }
         }
 
-        int x = 0;
-        while (iter.hasNext() && x < 20_000) {
+        int fetchedTxNo = 0;
+        while (iter.hasNext() && fetchedTxNo < MEMPOOL_INITIAL_SIZE) {
             mempool.add(iter.next());
-            x++;
+            fetchedTxNo++;
         }
-
+        int txMean = 0;
+        int noCycles = 0;
         // while there are blocks to mine and dataset has not been exhausted..
         while (cycles >= 0 && iter.hasNext()) {
-
+            int fetch = -1;
             // add new tx to current mempool
             try {
-                fetchTX();
+                fetch = fetchTX();
             } catch (Exception e) {
                 System.out.println("error in fetchTX(); " + e);
                 break;
@@ -150,7 +192,7 @@ public class Simulation {
                 String.valueOf(blockchain.get(blockchain.size() - 1).getMinerID()),
                 String.valueOf(blockchain.get(blockchain.size() - 1).getRewards()),
                 String.valueOf(SIZE_LIMIT),
-                String.valueOf(blockchain.get(blockchain.size() - 1).getSize()),
+                String.valueOf(blockchain.get(blockchain.size() - 1).getWeight()),
                 String.valueOf(blockchain.get(blockchain.size() - 1).getTXNumber())
             };
 
@@ -187,13 +229,15 @@ public class Simulation {
                 }
             }
 
-            System.out.println(cycles + " blocks left!!");
+            System.out.println(cycles + " blocks left!!  tx fetched: \t\t\t" + fetch + "\t\t mempool size: " + mempool.size() + " tx confirmed: " + results.getConfirmed().size());
             cycles--;
+            noCycles++;
+            txMean += fetch;
 
             // update miner winnings data (for summary log file)
             winnerMiner.updateWinnings(blockchain.get(blockchain.size() - 1).getRewards());
         }
-
+        System.out.println("mean tx fetched: " + (txMean / (noCycles)) + " total cycles: " + noCycles + " total confirmed: " + txMean);
         // finished simulation, log summary of results
         csvEnd();
     }
@@ -204,7 +248,7 @@ public class Simulation {
             System.err.println("Error: Total stake is zero or negative. Cannot determine a winning miner.");
             return null;
         }
-        int randomNumber = r1.nextInt(totalStake); // Use r1 for consistency
+        int randomNumber = randomSeed1.nextInt(totalStake); // Use randomSeed1 for consistency
         int cumulativeStake = 0;
         for (Miner miner : miners) {
             cumulativeStake += miner.getStake();
@@ -235,15 +279,15 @@ public class Simulation {
         for (int i = 1; i < blockchain.size(); i++) {
             BigDecimal blockFee = new BigDecimal("0");
             bp = bp.add(blockchain.get(i).getRewards());
-            bs = bs.add(new BigDecimal(blockchain.get(i).getSize()));
+            bs = bs.add(new BigDecimal(blockchain.get(i).getWeight()));
 
             bpArr.add(blockchain.get(i).getRewards());
-            bsArr.add(new BigDecimal(blockchain.get(i).getSize()));
+            bsArr.add(new BigDecimal(blockchain.get(i).getWeight()));
 
             try {
                 if (blockchain.get(i).getTXNumber() > 0) {
                     for (Transaction t : blockchain.get(i).getConfirmedTXs()) {
-                        blockFee = blockFee.add(new BigDecimal(t.getTotal_fee()));
+                        blockFee = blockFee.add(new BigDecimal(t.getTotalFee()));
                     }
                     if (blockFee.compareTo(BigDecimal.ZERO) > 0) {
                         blockFee = blockFee.divide(new BigDecimal(blockchain.get(i).getTXNumber()), 10, RoundingMode.HALF_EVEN);
@@ -280,7 +324,15 @@ public class Simulation {
 
         MathContext mc = new MathContext(10);
 
-        sumCW.writeRecord("TFM Type", "Avg. Block Payout", "Variance Between Block Payout", "Avg. TX Fee", "Variance Between TX Fees", "Avg. Block Size", "Block Size Variance");
+        sumCW.writeRecord(
+            "TFM Type", 
+            "Avg. Block Payout", 
+            "Variance Between Block Payout", 
+            "Avg. TX Fee", 
+            "Variance Between TX Fees", 
+            "Avg. Block Size", 
+            "Block Size Variance"
+        );
         sumCW.writeRecord(
             tfm.getType(),
             String.valueOf(bp.divide((new BigDecimal(blockchain.size() - 2)), 10, RoundingMode.HALF_EVEN)),
@@ -294,7 +346,13 @@ public class Simulation {
         IntStream.range(0, 5).forEach(i -> sumCW.writeRecord("")); // create empty space in file, just for better readability
 
         // log miner summary data
-        sumCW.writeRecord("Miner ID", "% of Stake Power", "Total Payout", "% of Total Network Payout", "Shared Pool Effect");
+        sumCW.writeRecord(
+            "Miner ID", 
+            "% of Stake Power", 
+            "Total Payout", 
+            "% of Total Network Payout", 
+            "Shared Pool Effect"
+        );
         DecimalFormat df = new DecimalFormat("#.####");
         df.setRoundingMode(RoundingMode.HALF_UP);
         BigDecimal tp = totalPayout;
@@ -305,7 +363,7 @@ public class Simulation {
                     String.valueOf((Double.parseDouble(df.format(((double) m.getStake() / totalStake))))),
                     String.valueOf(m.getRewards()),
                     String.valueOf(m.getRewards().divide(tp, 10, RoundingMode.HALF_EVEN)),
-                    String.valueOf(m.getPoolEffect())
+                    String.valueOf(m.getPublicPoolEffect())
                 );
             } else {
                 sumCW.writeRecord(
@@ -313,7 +371,7 @@ public class Simulation {
                     String.valueOf((Double.parseDouble(df.format(((double) m.getStake() / totalStake))))),
                     String.valueOf(m.getRewards()),
                     String.valueOf(0),
-                    String.valueOf(m.getPoolEffect())
+                    String.valueOf(m.getPublicPoolEffect())
                 );
             }
         }
@@ -321,7 +379,7 @@ public class Simulation {
         IntStream.range(0, 5).forEach(i -> sumCW.writeRecord("")); // create empty space in file, just for better readability
 
         // log block summary data
-        sumCW.writeRecord("Block Index", "Bytes Used", "% Of Max Block Size", "TX Count", "TX in Mempool", "Miner ID", "Miner Rewards", "Total Burned", "Avg. fee", "Base Fee", "Pool Amount", "Effect on Pool", "Taken From Private Pool", "Block Surplus", "Block Reward Bonus");
+        sumCW.writeRecord("Block Index", "Bytes Used", "% Of Max Block Size", "TX Count", "TX in Mempool", "Miner ID", "Miner Rewards", "Total Burned", "Avg. fee", "Base Fee", "Pool Amount", "Effect on Pool", "Taken From Private Pool", "Block Reward Total", "Block Tips Total");
         for (int i = 1; i < blockchain.size(); i++) {
             BigDecimal b = new BigDecimal("0");
             try {
@@ -333,8 +391,8 @@ public class Simulation {
             }
             sumCW.writeRecord(
                 String.valueOf(blockchain.get(i).getIndex()),
-                String.valueOf(blockchain.get(i).getSize()),
-                String.valueOf((double) blockchain.get(i).getSize() / SIZE_LIMIT),
+                String.valueOf(blockchain.get(i).getWeight()),
+                String.valueOf((double) blockchain.get(i).getWeight() / SIZE_LIMIT),
                 String.valueOf(blockchain.get(i).getLogs().getTxCount()),
                 String.valueOf(blockchain.get(i).getLogs().getMempoolSize()),
                 String.valueOf(blockchain.get(i).getMinerID()),
@@ -345,8 +403,8 @@ public class Simulation {
                 String.valueOf(blockchain.get(i).getPool()),
                 String.valueOf(blockchain.get(i).getLogs().getPoolEffect()),
                 String.valueOf(blockchain.get(i).getLogs().isTakeFromPrivate()),
-                String.valueOf(blockchain.get(i).getLogs().getBlockSurplus()),
-                String.valueOf(blockchain.get(i).getLogs().getBlockReward())
+                String.valueOf(blockchain.get(i).getLogs().getBlockTotalReward()),
+                String.valueOf(blockchain.get(i).getLogs().getBlockTipsTotal())
             );
         }
 
@@ -354,27 +412,27 @@ public class Simulation {
     }
 
     // constructor for simulation, initialise all required data, create files, etc.
-    public Simulation(AbstractTFM a, int t, int x, int m, String s, String i) throws IOException {
-        this.mainPath = Paths.get("output/" + s + ".csv");
+    public Simulation(AbstractTFM tfmType, int cycles, int seed, int noOfMiners, String outputFileName, String inputFileName) throws IOException {
+        this.mainPath = Paths.get("output/" + outputFileName + ".csv");
         this.mainPath.toFile().getParentFile().mkdirs();
         this.mainCW = CsvWriter.builder().build(mainPath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
-        this.sumPath = Paths.get("output/" + s + "-summary.csv");
+        this.sumPath = Paths.get("output/" + outputFileName + "-summary.csv");
         this.sumPath.toFile().getParentFile().mkdirs();
         this.sumCW = CsvWriter.builder().build(sumPath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
-        this.tfm = a;
-        this.time = t;
+        this.tfm = tfmType;
+        this.cycles = cycles;
 
-        this.inputPath = Paths.get("input/" + i);
+        this.inputPath = Paths.get("input/" + inputFileName);
 
-        this.r1 = new Random(x);
-        this.r2 = new Random(x * 2);
+        this.randomSeed1 = new Random(seed);
+        this.randomSeed2 = new Random(seed * 2);
 
         // randomly create miners + assign stake to them
         PoissonDistribution poisson = new PoissonDistribution(500);
-        for (int j = 1; j <= m; j++) {
-            miners.add(new Miner(j, Math.max(1, poisson.sample())));
+        for (int minerId = 1; minerId <= noOfMiners; minerId++) {
+            miners.add(new Miner(minerId, Math.max(1, poisson.sample())));
         }
 
         // total stake in the network

@@ -2,14 +2,13 @@ package ZBRA.blockchain;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-// Ensure the Transaction class is correctly imported or defined in the same package
-import ZBRA.blockchain.Transaction; // Verify this path is correct or adjust accordingly
 
 public class Data {
     ArrayList<Transaction> mempool;
     ArrayList<Transaction> confirmed;
     ArrayList<Transaction> unconfirmed = new ArrayList<>();
     double size;
+    double weight;
     double baseFee;
     BigDecimal sharedPool = new BigDecimal(0);
     BigDecimal rewards = new BigDecimal(0);
@@ -19,8 +18,8 @@ public class Data {
     BigDecimal poolEffect;
     boolean takeFromPublic;
     boolean takeFromPrivate;
-    BigDecimal blockReward;
-    BigDecimal blockSurplus;
+    BigDecimal blockTotalReward;
+    BigDecimal blockTipsTotal;
     long txCount;
 
     public ArrayList<Transaction> getUnconfirmed() {
@@ -71,99 +70,147 @@ public class Data {
         return takeFromPrivate;
     }
 
-    public BigDecimal getBlockReward() {
-        return blockReward;
+    public BigDecimal getBlockTotalReward() {
+        return blockTotalReward;
     }
 
-    public BigDecimal getBlockSurplus() {
-        return blockSurplus;
+    public BigDecimal getBlockTipsTotal() {
+        return blockTipsTotal;
     }
 
     public long getTxCount() {
         return txCount;
     }
 
-    // First-Price Data Style
-    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, double gu, ArrayList<String[]> l) {
-        this.mempool = m;
-        this.confirmed = c;
+    public double getWeight() {
+        return weight;
+    }
 
-        this.size = gu;
-        this.rewards = r;
+    // First-Price Data Style
+    public Data(ArrayList<Transaction> mempool,
+            ArrayList<Transaction> confirmedTX,
+            BigDecimal minerRewards, 
+            double bytesUsed,
+            double weightUsed,
+            ArrayList<String[]> logs) {
+
+        this.mempool = mempool;
+        this.confirmed = confirmedTX;
+
+        this.size = bytesUsed;
+        this.weight = weightUsed;
+        this.rewards = minerRewards;
         this.baseFee = -1;
 
-        this.txCount = c.size();
+        this.txCount = confirmedTX.size();
         this.mempoolSize = mempool.size();
 
-        this.logs = l;
+        this.logs = logs;
     }
 
     // Second-Price Data Style
-    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, double f, double gu, ArrayList<String[]> l) {
-        this.mempool = m;
-        this.confirmed = c;
+    public Data(ArrayList<Transaction> mempool,
+            ArrayList<Transaction> confirmedTX,
+            BigDecimal minerRewards,
+            double effectiveFee,
+            double bytesUsed,
+            double weightUsed,
+            ArrayList<String[]> logs) {
 
-        this.size = gu;
-        this.rewards = r;
-        this.baseFee = f;
+        this.mempool = mempool;
+        this.confirmed = confirmedTX;
 
-        this.txCount = c.size();
+        this.size = bytesUsed;
+        this.weight = weightUsed;
+        this.rewards = minerRewards;
+        this.baseFee = effectiveFee;
+
+        this.txCount = confirmedTX.size();
         this.mempoolSize = mempool.size();
 
-        this.logs = l;
-    }
-
-    // EIP-1559 Data Style
-    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, BigDecimal b, double f, double gu, ArrayList<String[]> l) {
-        this.mempool = m;
-        this.confirmed = c;
-
-        this.size = gu;
-        this.rewards = r;
-        this.burned = b;
-        this.baseFee = f;
-
-        this.txCount = c.size();
-        this.mempoolSize = mempool.size();
-
-        this.logs = l;
-    }
-
-    // Pool Data Style
-    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, BigDecimal r, double f, BigDecimal s, double gu, BigDecimal pe, boolean tfpub, boolean tfpriv, BigDecimal br, BigDecimal bs, ArrayList<String[]> l) {
-        this.mempool = m;
-        this.confirmed = c;
-
-        this.size = gu;
-        this.rewards = r;
-        this.sharedPool = s;
-        this.baseFee = f;
-
-        this.txCount = c.size();
-        this.mempoolSize = mempool.size();
-        this.poolEffect = pe;
-        this.takeFromPublic = tfpub;
-        this.takeFromPrivate = tfpriv;
-        this.blockReward = br;
-        this.blockSurplus = bs;
-
-        this.logs = l;
+        this.logs = logs;
     }
 
     // Burning 2nd Price Data Style
-    public Data(ArrayList<Transaction> m, ArrayList<Transaction> c, ArrayList<Transaction> uc, BigDecimal r, double f, BigDecimal b, double gu, ArrayList<String[]> l) {
-        this.mempool = m;
-        this.confirmed = c;
-        this.unconfirmed = uc;
+    public Data(ArrayList<Transaction> mempool,
+            ArrayList<Transaction> confirmedTX, 
+            ArrayList<Transaction> unconfirmedTX, 
+            BigDecimal minerRewards, 
+            double effectiveFee, BigDecimal burnedAmount, 
+            double bytesUsed, double weightUsed, 
+            ArrayList<String[]> logs) {
 
-        this.size = gu;
-        this.rewards = r;
-        this.burned = b;
-        this.baseFee = f;
+        this.mempool = mempool;
+        this.confirmed = confirmedTX;
+        this.unconfirmed = unconfirmedTX;
 
-        this.txCount = c.size();
-        this.mempoolSize = m.size();
+        this.size = bytesUsed;
+        this.weight = weightUsed;
+        this.rewards = minerRewards;
+        this.burned = burnedAmount;
+        this.baseFee = effectiveFee;
 
-        this.logs = l;
+        this.txCount = confirmedTX.size();
+        this.mempoolSize = mempool.size();
+
+        this.logs = logs;
+    }
+
+    // EIP-1559 Data Style
+    public Data(ArrayList<Transaction> mempool, 
+            ArrayList<Transaction> confirmedTX, 
+            BigDecimal minerRewards, 
+            BigDecimal burnedAmount, 
+            double baseFee,
+            double bytesUsed, double weightUsed, 
+            ArrayList<String[]> logs) {
+
+        this.mempool = mempool;
+        this.confirmed = confirmedTX;
+
+        this.size = bytesUsed;
+        this.weight = weightUsed;
+        this.rewards = minerRewards;
+        this.burned = burnedAmount;
+        this.baseFee = baseFee;
+
+        this.txCount = confirmedTX.size();
+        this.mempoolSize = mempool.size();
+
+        this.logs = logs;
+    }
+
+    // Pool Data Style
+    public Data(ArrayList<Transaction> mempool, 
+            ArrayList<Transaction> confirmedTX, 
+            BigDecimal minerRewards, 
+            double baseFee, 
+            BigDecimal poolTotal, 
+            double bytesUsed, double weightUsed, 
+            BigDecimal poolEffect, 
+            boolean takenFromPublicPool, 
+            boolean takenFromPrivatePool, 
+            BigDecimal blockTotalReward, 
+            BigDecimal blockTipsTotal, 
+            ArrayList<String[]> logs) {
+
+        this.mempool = mempool;
+        this.confirmed = confirmedTX;
+
+        this.size = bytesUsed;
+        this.weight = weightUsed;
+        this.rewards = minerRewards;
+        this.sharedPool = poolTotal;
+        this.baseFee = baseFee;
+
+        this.txCount = confirmedTX.size();
+        this.mempoolSize = mempool.size();
+        this.poolEffect = poolEffect;
+        this.takeFromPublic = takenFromPublicPool;
+        this.takeFromPrivate = takenFromPrivatePool;
+        this.blockTotalReward = blockTotalReward;
+        this.blockTipsTotal = blockTipsTotal;
+
+        this.logs = logs;
     }
 }

@@ -1,11 +1,11 @@
 package ZBRA.tfm;
 
+import java.util.ArrayList;
+
 import ZBRA.blockchain.Block;
 import ZBRA.blockchain.Data;
 import ZBRA.blockchain.Miner;
 import ZBRA.blockchain.Transaction;
-
-import java.util.ArrayList;
 
 // Abstract class for different TFM styles
 public abstract class AbstractTFM {
@@ -21,6 +21,5 @@ public abstract class AbstractTFM {
 
     abstract public String[] logHeaders();
 
-    abstract public Data fetchValidTX(ArrayList<Transaction> m, double g, Block b, Miner miner, double target);
-
+    abstract public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, Block block, Miner miner, double target);
 }
