@@ -51,49 +51,46 @@ public class EIP1559 extends AbstractTFM {
     }
 
     @Override
-    public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, Block block, Miner miner, double weightTarget) {
+    public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, ArrayList<Block> blockchain, Miner miner, double weightTarget) {
         // Sort mempool by highest fee per byte
         mempool.sort((tx1, tx2) -> Double.compare(tx2.getWeightFee(), tx1.getWeightFee()));
+        Block block = blockchain.get(blockchain.size() - 1);
 
         double sizeUsedUp = 0;
         double weightUsedUp = 0;
 
         ArrayList<String[]> logs = new ArrayList<>();
-        BigDecimal totalUserPay = new BigDecimal("0");
-        BigDecimal minerRewards = new BigDecimal("0");
-        BigDecimal burned = new BigDecimal("0");
+        BigDecimal totalUserPay = BigDecimal.ZERO;
+        BigDecimal minerRewards = BigDecimal.ZERO;
+        BigDecimal burned = BigDecimal.ZERO;
 
         int index = 1;
 
         ArrayList<Transaction> txList = new ArrayList<>();
-        ArrayList<Transaction> confirmedTxList = new ArrayList<>();
-        ArrayList<Transaction> unconfirmedTxList = new ArrayList<>();
 
-        // Calculate base fee for this block (max 12.5% adjustment)
         double baseFee = block.getBaseFee() * (1.0 + 0.125 * ((block.getWeight() - weightTarget) / weightTarget));
 
-        while (!mempool.isEmpty()) {
-            Transaction tx = mempool.get(0);
+        int i = 0;
+        int mempoolSize = mempool.size();
+
+        while (i < mempoolSize) {
+            Transaction tx = mempool.get(i);
             double txWeight = tx.getWeight();
             double txSize = tx.getSize();
 
-            // Skip transactions too large to ever fit
             if (txSize > weightLimit) {
-                mempool.remove(0);
+                i++;
                 continue;
             }
 
-            // Stop if this transaction would exceed the block size limit
             if ((weightUsedUp + txWeight) > weightLimit) {
                 break;
             }
 
-            // Stop if the transaction can't pay the base fee (mempool is sorted by fee)
             if (tx.getWeightFee() < baseFee) {
                 break;
             }
 
-            // Confirm transaction
             txList.add(tx);
             sizeUsedUp += txSize;
             weightUsedUp += txWeight;
@@ -106,9 +103,11 @@ public class EIP1559 extends AbstractTFM {
 
             logs.add(logStart(index, tx.getHash(), tx.getTotalFee(), feeBurned, feeTip));
 
-            mempool.remove(0);
+            i++;
             index++;
         }
+
+        mempool.subList(0, txList.size()).clear();
 
         return new Data(mempool, txList, minerRewards, burned, baseFee, sizeUsedUp, weightUsedUp, logs);
     }

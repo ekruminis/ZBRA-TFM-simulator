@@ -21,5 +21,5 @@ public abstract class AbstractTFM {
 
     abstract public String[] logHeaders();
 
-    abstract public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, Block block, Miner miner, double target);
+    abstract public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, ArrayList<Block> block, Miner miner, double target);
 }

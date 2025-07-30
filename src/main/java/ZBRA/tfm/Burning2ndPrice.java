@@ -2,6 +2,7 @@ package ZBRA.tfm;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.PriorityQueue;
 
 import ZBRA.blockchain.Block;
 import ZBRA.blockchain.Data;
@@ -55,9 +56,10 @@ public class Burning2ndPrice extends AbstractTFM {
 
     // Main Burning Second-Price Mechanism Implementation
     @Override
-    public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, Block block, Miner miner, double weightTarget) {
-        // Sort mempool by fee per weight unit
-        mempool.sort((tx1, tx2) -> Double.compare(tx2.getWeightFee(), tx1.getWeightFee()));
+    public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, ArrayList<Block> blockchain, Miner miner, double weightTarget) {
+        Block block = blockchain.get(blockchain.size() - 1);
+        PriorityQueue<Transaction> mempoolQueue = new PriorityQueue<>((tx1, tx2) -> Double.compare(tx2.getWeightFee(), tx1.getWeightFee()));
+        mempoolQueue.addAll(mempool);
 
         double sizeUsedUp = 0;
         double weightUsedUp = 0;
@@ -74,32 +76,24 @@ public class Burning2ndPrice extends AbstractTFM {
         ArrayList<Transaction> confirmedTxList = new ArrayList<>();
         ArrayList<Transaction> unconfirmedTxList = new ArrayList<>();
 
-        while (!mempool.isEmpty()) {
-            Transaction tx = mempool.get(0);
+        while (!mempoolQueue.isEmpty()) {
+            Transaction tx = mempoolQueue.poll();
             double txWeight = tx.getWeight();
             double txSize = tx.getSize();
 
-            // Skip transactions too large to ever fit
             if (txWeight > weightLimit) {
-                mempool.remove(0);
                 continue;
             }
 
-            // If adding this tx would exceed the block weight limit, stop
             if ((weightUsedUp + txWeight) > weightLimit) {
                 break;
             }
 
-            // Add to temporary tx list
             txList.add(tx);
             sizeUsedUp += txSize;
             weightUsedUp += txWeight;
-
-            mempool.remove(0);
         }
 
-        // Split tx list in half
-        txList.sort((t1, t2) -> Double.compare(t2.getWeightFee(), t1.getWeightFee()));
         int split = txList.size() / 2;
         confirmedTxList = new ArrayList<>(txList.subList(0, split));
         unconfirmedTxList = new ArrayList<>(txList.subList(split, txList.size()));
@@ -111,7 +105,6 @@ public class Burning2ndPrice extends AbstractTFM {
         for (Transaction t : confirmedTxList) {
             double feePaid = t.getWeight() * effectiveFee;
             totalUserPay = totalUserPay.add(BigDecimal.valueOf(feePaid));
-
             logs.add(logStart(index, "YES", t.getHash(), t.getTotalFee(), feePaid, t.getWeight(), t.getSize()));
             index++;
         }
@@ -123,6 +116,10 @@ public class Burning2ndPrice extends AbstractTFM {
         }
 
         burned = totalUserPay.subtract(minerRewards);
+
+        // refill mempool with unconfirmed tx
+        mempool.clear();
+        mempool.addAll(mempoolQueue);
         mempool.addAll(unconfirmedTxList);
 
         return new Data(mempool, confirmedTxList, unconfirmedTxList, minerRewards, effectiveFee, burned, sizeUsedUp, weightUsedUp, logs);

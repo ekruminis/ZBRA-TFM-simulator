@@ -1,6 +1,7 @@
 package ZBRA;
 
 import java.io.IOException;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.time.StopWatch;
@@ -20,7 +21,7 @@ public class Main {
         //     return;
         // }
 
-        args = new String[]{"first_price", "1", "9789798", "15", "first-price-month-1", "transactions.json"};
+        args = new String[]{"full", "4320", "7653", "15", "first-price-month-x", "transactions.json"};
 
         // if (tfm == null) {
         //     System.err.println("Error: Invalid TFM style provided. Please use one of the supported styles: first_price, second_price, eip1559, pool, burning_second_price.");
@@ -32,24 +33,29 @@ public class Main {
             System.err.println("Error: NUMBER_OF_MINERS must be greater than zero.");
             return;
         }
-        String[] tfms = {"first_price", "second_price", "eip1559", "pool", "burning_second_price"};
-
+        String[] tfms = {"first_price", "second_price", "burning_second_price", "eip1559", "pool"};
+        
         if (args[0].equals("full")) {
-            for (String tfmName : tfms) {
+            Random rand = new Random();
+            for (int i = 0; i < 20; i++) {
+                for (String tfmName : tfms) {
                 AbstractTFM tfm = switch (tfmName) {
                     case "first_price" -> new FirstPrice();
                     case "second_price" -> new SecondPrice();
+                    case "burning_second_price" -> new Burning2ndPrice();
                     case "eip1559" -> new EIP1559();
                     case "pool" -> new Pool();
-                    case "burning_second_price" -> new Burning2ndPrice();
                     default -> null;
                 };
 
                 if (tfm != null) {
                     StopWatch sw = new StopWatch();
-                    Simulation s = new Simulation(tfm, Integer.parseInt(args[1]), 
-                                            Integer.parseInt(args[2]), Integer.parseInt(args[3]), 
-                                            (tfmName + "month-" + args[2]), args[5]);
+                    Simulation s = new Simulation(tfm,                          // tfm type
+                                            Integer.parseInt(args[1]),          // number of block cycles
+                                            rand.nextInt(),                     // seed
+                                            Integer.parseInt(args[3]),          // number of miners
+                                            (tfmName + "-month-" + args[2]),    // output filename
+                                            args[5]);                           // input filename
 
                     sw.start();
                     s.simulate();
@@ -57,6 +63,8 @@ public class Main {
                     System.out.println("\n[" + tfmName + "] timer: " + sw.getTime(TimeUnit.MILLISECONDS) + " ms");
                 }
             }
+            }
+            
         }
         else {
             // single mode

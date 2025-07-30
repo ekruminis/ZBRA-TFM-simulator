@@ -47,42 +47,46 @@ public class FirstPrice extends AbstractTFM {
     }
 
     // Main First-Price Mechanism Implementation
-    public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, Block block, Miner miner, double weightTarget) {
+    public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, ArrayList<Block> blockchain, Miner miner, double weightTarget) {
         // sort current mempool by highest fee per weight offered
         mempool.sort((tx1, tx2) -> Double.compare(tx2.getWeightFee(), tx1.getWeightFee()));
 
-        ArrayList<String[]> logs = new ArrayList<String[]>(); // logging strings for printing later
-        ArrayList<Transaction> confirmed = new ArrayList<Transaction>(); // list of *confirmed* transactions
-        double weightUsedUp = 0; // total weight used by current block
-        double bytesUsedUp = 0; // total bytes used by current block
-        BigDecimal rewards = new BigDecimal("0"); // total rewards given to miner
+        Block block = blockchain.get(blockchain.size() - 1);
+
+        ArrayList<String[]> logs = new ArrayList<>();
+        ArrayList<Transaction> confirmed = new ArrayList<>();
+        double weightUsedUp = 0;
+        double bytesUsedUp = 0;
+        BigDecimal rewards = BigDecimal.ZERO;
         int index = 1;
 
-        while (!mempool.isEmpty()) {
-            Transaction tx = mempool.get(0);
+        int i = 0;
+        int mempoolSize = mempool.size();
+
+        while (i < mempoolSize) {
+            Transaction tx = mempool.get(i);
             double txWeight = tx.getWeight();
 
-            // Skip transactions that are too large to ever fit
             if (txWeight > weightLimit) {
-                mempool.remove(0);
+                i++;
                 continue;
             }
-
-            // Stop if this transaction would exceed the block limit
             if ((weightUsedUp + txWeight) > weightLimit) {
                 break;
             }
 
-            // Confirm the transaction
             confirmed.add(tx);
             bytesUsedUp += tx.getSize();
             weightUsedUp += txWeight;
-            rewards = rewards.add(new BigDecimal(tx.getTotalFee()));
+            rewards = rewards.add(BigDecimal.valueOf(tx.getTotalFee()));
             logs.add(logStart(index, tx.getHash(), tx.getTotalFee(), tx.getWeight(), tx.getSize()));
-            // Remove from mempool
-            mempool.remove(0);
+
+            i++;
             index++;
         }
+
+        // Bulk remove confirmed transactions after processing
+        mempool.subList(0, confirmed.size()).clear();
 
         return new Data(mempool, confirmed, rewards, bytesUsedUp, weightUsedUp, logs);
     }

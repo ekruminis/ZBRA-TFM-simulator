@@ -49,9 +49,11 @@ public class SecondPrice extends AbstractTFM {
 
     // Main Second-Price Mechanism Implementation
     @Override
-    public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, Block block, Miner miner, double weightTarget) {
+    public Data fetchValidTX(ArrayList<Transaction> mempool, double weightLimit, ArrayList<Block> blockchain, Miner miner, double weightTarget) {
         // sort current mempool by highest fee per byte price offered
         mempool.sort((tx1, tx2) -> Double.compare(tx2.getWeightFee(), tx1.getWeightFee()));
+
+        Block block = blockchain.get(blockchain.size() - 1);
 
         ArrayList<String[]> logs = new ArrayList<String[]>(); // log data for printing later
         ArrayList<Transaction> confirmed = new ArrayList<Transaction>(); // list of *confirmed* transactions
@@ -62,40 +64,39 @@ public class SecondPrice extends AbstractTFM {
         double effectiveFee = 0;  // fee per byte price to be paid by all included tx
 
         int index = 1;
+        int processed = 0; // count how many TXs were processed
 
-        while (!mempool.isEmpty()) {
-            Transaction tx = mempool.get(0);
+        for (int i = 0; i < mempool.size(); i++) {
+            Transaction tx = mempool.get(i);
             double txWeight = tx.getWeight();
 
-            // Skip transactions that are too large to ever fit
             if (txWeight > weightLimit) {
-                mempool.remove(0);
+                processed++;
                 continue;
             }
 
-            // Stop if this transaction would exceed the block limit
             if ((weightUsedUp + txWeight) > weightLimit) {
                 break;
             }
 
-            // Confirm the transaction
             confirmed.add(tx);
             bytesUsedUp += tx.getSize();
             weightUsedUp += txWeight;
             logs.add(logStart(index, tx.getHash(), tx.getTotalFee(), txWeight, tx.getSize()));
-
-            // Remove from mempool
-            mempool.remove(0);
             index++;
+            processed++;
         }
 
-        // Save the fee per byte of the last confirmed transaction
         if (!confirmed.isEmpty()) {
             effectiveFee = confirmed.get(confirmed.size() - 1).getWeightFee();
-            // Calculate miner payout based on weight * effectiveFee
             for (Transaction t : confirmed) {
-                rewards = rewards.add(new BigDecimal(t.getWeight() * effectiveFee));
+                rewards = rewards.add(BigDecimal.valueOf(t.getWeight() * effectiveFee));
             }
+        }
+
+        // remove processed transactions from mempool (optional, depends on your logic)
+        if (processed > 0) {
+            mempool.subList(0, processed).clear();
         }
 
         return new Data(mempool, confirmed, rewards, effectiveFee, bytesUsedUp, weightUsedUp, logs);
